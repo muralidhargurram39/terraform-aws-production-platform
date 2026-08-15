@@ -57,3 +57,28 @@ output "flow_log_group_name" {
   description = "Dev VPC Flow Log CloudWatch Log Group."
   value       = module.security.flow_log_group_name
 }
+
+output "ec2_role_name" {
+  description = "Dev EC2 IAM role name."
+  value       = module.iam.ec2_role_name
+}
+
+output "ec2_instance_profile_name" {
+  description = "Dev EC2 instance profile name."
+  value       = module.iam.ec2_instance_profile_name
+}
+
+output "cicd_role_arn" {
+  description = "Dev CI/CD IAM role ARN."
+  value       = module.iam.cicd_role_arn
+}
+
+output "auditor_role_arn" {
+  description = "Dev auditor IAM role ARN."
+  value       = module.iam.auditor_role_arn
+}
+
+output "access_analyzer_arn" {
+  description = "Dev IAM Access Analyzer ARN."
+  value       = module.iam.access_analyzer_arn
+}

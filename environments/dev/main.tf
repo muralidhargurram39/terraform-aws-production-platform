@@ -74,3 +74,16 @@ module "security" {
 
   tags = local.common_tags
 }
+
+module "iam" {
+  source = "../../modules/iam"
+
+  name = "${var.environment}-platform"
+
+  enable_ec2_role        = true
+  enable_cicd_role       = true
+  enable_auditor_role    = true
+  enable_access_analyzer = true
+
+  tags = local.common_tags
+}
