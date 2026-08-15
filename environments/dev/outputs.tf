@@ -32,3 +32,28 @@ output "nat_gateway_ids" {
   description = "Dev NAT Gateway IDs."
   value       = module.vpc.nat_gateway_ids
 }
+
+output "alb_security_group_id" {
+  description = "Dev ALB security group."
+  value       = module.security.alb_security_group_id
+}
+
+output "app_security_group_id" {
+  description = "Dev application security group."
+  value       = module.security.app_security_group_id
+}
+
+output "db_security_group_id" {
+  description = "Dev database security group."
+  value       = module.security.db_security_group_id
+}
+
+output "flow_log_id" {
+  description = "Dev VPC Flow Log."
+  value       = module.security.flow_log_id
+}
+
+output "flow_log_group_name" {
+  description = "Dev VPC Flow Log CloudWatch Log Group."
+  value       = module.security.flow_log_group_name
+}

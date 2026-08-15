@@ -48,3 +48,29 @@ module "vpc" {
 
   tags = local.common_tags
 }
+
+module "security" {
+  source = "../../modules/security"
+
+  name = "${var.environment}-platform"
+
+  vpc_id = module.vpc.vpc_id
+
+  app_port = 8080
+
+  db_port = 5432
+
+  allowed_http_cidr_blocks = [
+    "0.0.0.0/0"
+  ]
+
+  allowed_https_cidr_blocks = [
+    "0.0.0.0/0"
+  ]
+
+  enable_flow_logs = true
+
+  flow_log_retention_days = 30
+
+  tags = local.common_tags
+}
