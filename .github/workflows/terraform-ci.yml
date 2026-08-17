@@ -15,7 +15,8 @@ permissions:
   contents: read
 
 env:
-  TERRAFORM_VERSION: "1.12.2"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
 
 jobs:
   terraform-validation:
@@ -27,6 +28,33 @@ jobs:
         uses: actions/checkout@v4
 
       # ==========================================================
+      # Read Terraform version from repository
+      # ==========================================================
+
+      - name: Read Terraform version
+        id: terraform-version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "READ TERRAFORM VERSION"
+          echo "=========================================="
+
+          test -f .terraform-version
+
+          TERRAFORM_VERSION="$(tr -d '[:space:]' < .terraform-version)"
+
+          if [[ ! "${TERRAFORM_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: Invalid Terraform version: ${TERRAFORM_VERSION}"
+            exit 1
+          fi
+
+          echo "Terraform version: ${TERRAFORM_VERSION}"
+
+          echo "terraform_version=${TERRAFORM_VERSION}" >> "${GITHUB_OUTPUT}"
+
+      # ==========================================================
       # Install Terraform
       #
       # We intentionally install Terraform directly instead of
@@ -36,6 +64,8 @@ jobs:
 
       - name: Install Terraform
         shell: bash
+        env:
+          TERRAFORM_VERSION: ${{ steps.terraform-version.outputs.terraform_version }}
         run: |
           set -euo pipefail
 
@@ -69,7 +99,39 @@ jobs:
             /tmp/terraform/terraform \
             /usr/local/bin/terraform
 
+      # ==========================================================
+      # Verify Terraform installation
+      # ==========================================================
+
+      - name: Terraform version
+        shell: bash
+        env:
+          EXPECTED_TERRAFORM_VERSION: ${{ steps.terraform-version.outputs.terraform_version }}
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "TERRAFORM VERSION"
+          echo "=========================================="
+
           terraform version
+
+          ACTUAL_TERRAFORM_VERSION="$(
+            terraform version -json \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["terraform_version"])'
+          )"
+
+          echo
+          echo "Expected: ${EXPECTED_TERRAFORM_VERSION}"
+          echo "Actual  : ${ACTUAL_TERRAFORM_VERSION}"
+
+          if [[ "${ACTUAL_TERRAFORM_VERSION}" != "${EXPECTED_TERRAFORM_VERSION}" ]]; then
+            echo "ERROR: Terraform version mismatch."
+            exit 1
+          fi
+
+          echo
+          echo "Terraform version check passed."
 
       # ==========================================================
       # Terraform formatting
@@ -115,6 +177,9 @@ jobs:
 
           terraform validate
 
+          echo
+          echo "DEV Terraform validation passed."
+
       # ==========================================================
       # Route 53 validation
       # ==========================================================
@@ -135,6 +200,9 @@ jobs:
 
           terraform validate
 
+          echo
+          echo "Route 53 Terraform validation passed."
+
       # ==========================================================
       # ACM validation
       # ==========================================================
@@ -154,6 +222,9 @@ jobs:
             -input=false
 
           terraform validate
+
+          echo
+          echo "ACM Terraform validation passed."
 
       # ==========================================================
       # Shell script syntax
@@ -182,6 +253,8 @@ jobs:
 
       - name: Validation summary
         shell: bash
+        env:
+          TERRAFORM_VERSION: ${{ steps.terraform-version.outputs.terraform_version }}
         run: |
           set -euo pipefail
 
