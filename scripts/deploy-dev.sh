@@ -128,8 +128,29 @@ echo "DEV state contains no protected global resources."
 echo
 echo "Creating Terraform deployment plan..."
 
-terraform plan \
-  -out=dev-deploy.tfplan
+PLAN_OUTPUT="$(terraform plan -out=dev-deploy.tfplan 2>&1)"
+PLAN_EXIT_CODE=$?
+
+echo "${PLAN_OUTPUT}"
+
+if [[ ${PLAN_EXIT_CODE} -ne 0 ]]; then
+  echo
+  echo "ERROR: Terraform plan failed."
+  exit "${PLAN_EXIT_CODE}"
+fi
+
+if grep -q "No changes. Your infrastructure matches the configuration." <<< "${PLAN_OUTPUT}"; then
+  echo
+  echo "=============================================="
+  echo " DEV ENVIRONMENT ALREADY UP TO DATE"
+  echo "=============================================="
+  echo
+  echo "Terraform reports no changes."
+  echo "Nothing to deploy."
+  echo
+  rm -f dev-deploy.tfplan
+  exit 0
+fi
 
 echo
 echo "=============================================="
@@ -143,6 +164,7 @@ read -r -p "Type DEPLOY-DEV to continue: " CONFIRM
 if [[ "${CONFIRM}" != "DEPLOY-DEV" ]]; then
   echo
   echo "Deployment cancelled."
+  rm -f dev-deploy.tfplan
   exit 0
 fi
 
@@ -150,6 +172,8 @@ echo
 echo "Applying deployment plan..."
 
 terraform apply dev-deploy.tfplan
+
+rm -f dev-deploy.tfplan
 
 echo
 echo "=============================================="
