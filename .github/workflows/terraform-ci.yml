@@ -4,158 +4,510 @@ on:
   pull_request:
     branches:
       - main
+
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  AWS_REGION: ap-south-2
+  AWS_ACCOUNT_ID: "438064565553"
+  TERRAFORM_VERSION: "1.12.2"
+  STATE_BUCKET: aws-production-platform-terraform-state
+
 jobs:
+
+  # ============================================================
+  # JOB 1: TERRAFORM VALIDATION
+  #
+  # Runs automatically on:
+  #   - Pull requests to main
+  #   - Pushes to main
+  #   - Manual workflow execution
+  #
+  # This job DOES NOT access AWS.
+  # ============================================================
+
   terraform-validation:
     name: Terraform Validation
     runs-on: ubuntu-latest
 
     steps:
+
+      # --------------------------------------------------------
+      # Checkout
+      # --------------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --------------------------------------------------------
+      # Install Terraform
+      #
+      # We intentionally install Terraform directly instead of
+      # using hashicorp/setup-terraform to avoid GitHub action
+      # download/rate-limit issues.
+      # --------------------------------------------------------
+
       - name: Install Terraform
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          sudo apt-get update
-          sudo apt-get install -y gnupg software-properties-common curl
+          TERRAFORM_VERSION="${TERRAFORM_VERSION}"
+          TERRAFORM_URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
 
-          curl -fsSL https://apt.releases.hashicorp.com/gpg \
-            | gpg --dearmor \
-            | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
+          echo "Installing Terraform ${TERRAFORM_VERSION}"
 
-          echo \
-            "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
-            | sudo tee /etc/apt/sources.list.d/hashicorp.list
+          curl -fsSL \
+            "${TERRAFORM_URL}" \
+            -o /tmp/terraform.zip
 
-          sudo apt-get update
-          sudo apt-get install -y terraform
+          unzip -o \
+            /tmp/terraform.zip \
+            -d /tmp/terraform
+
+          sudo install \
+            /tmp/terraform/terraform \
+            /usr/local/bin/terraform
+
+          rm -rf \
+            /tmp/terraform.zip \
+            /tmp/terraform
+
+      # --------------------------------------------------------
+      # Verify Terraform
+      # --------------------------------------------------------
 
       - name: Terraform version
-        run: terraform version
+        run: |
+          terraform version
+
+      # --------------------------------------------------------
+      # Terraform formatting
+      # --------------------------------------------------------
 
       - name: Terraform format check
         run: |
+          set -euo pipefail
+
           terraform fmt -check -recursive environments/dev
           terraform fmt -check -recursive global/route53
           terraform fmt -check -recursive global/acm
 
+      # --------------------------------------------------------
+      # DEV validation
+      #
+      # backend=false is intentional.
+      #
+      # Validation should NOT require AWS credentials.
+      # --------------------------------------------------------
+
       - name: Validate DEV Terraform
         working-directory: environments/dev
         run: |
-          terraform init -backend=false -input=false
+          set -euo pipefail
+
+          terraform init \
+            -backend=false \
+            -input=false
+
           terraform validate
+
+      # --------------------------------------------------------
+      # Route 53 validation
+      # --------------------------------------------------------
 
       - name: Validate Route 53 Terraform
         working-directory: global/route53
         run: |
-          terraform init -backend=false -input=false
+          set -euo pipefail
+
+          terraform init \
+            -backend=false \
+            -input=false
+
           terraform validate
+
+      # --------------------------------------------------------
+      # ACM validation
+      # --------------------------------------------------------
 
       - name: Validate ACM Terraform
         working-directory: global/acm
         run: |
-          terraform init -backend=false -input=false
+          set -euo pipefail
+
+          terraform init \
+            -backend=false \
+            -input=false
+
           terraform validate
+
+      # --------------------------------------------------------
+      # Shell script validation
+      # --------------------------------------------------------
 
       - name: Shell syntax validation
         run: |
+          set -euo pipefail
+
           bash -n scripts/deploy-dev.sh
           bash -n scripts/destroy-dev.sh
           bash -n scripts/validate.sh
           bash -n scripts/app-bootstrap.sh
 
-  terraform-plan:
+      # --------------------------------------------------------
+      # Final validation message
+      # --------------------------------------------------------
+
+      - name: Validation complete
+        run: |
+          echo "=========================================="
+          echo "Terraform validation completed successfully"
+          echo "=========================================="
+
+
+  # ============================================================
+  # JOB 2: TERRAFORM DEV PLAN
+  #
+  # Runs ONLY when manually started with:
+  #
+  # GitHub -> Actions -> Terraform CI -> Run workflow
+  #
+  # This job accesses AWS using GitHub OIDC.
+  # No long-lived AWS access keys are used.
+  # ============================================================
+
+  terraform-dev-plan:
     name: Terraform DEV Plan
     runs-on: ubuntu-latest
 
-    # Only execute this job when explicitly started manually.
-    if: github.event_name == 'workflow_dispatch'
+    needs:
+      - terraform-validation
 
+    # IMPORTANT:
+    #
+    # The IAM trust policy contains:
+    #
+    # repo:muralidhargurram39/terraform-aws-production-platform
+    # :environment:dev
+    #
+    # Therefore this GitHub Environment MUST remain "dev".
     environment: dev
 
+    # Required for GitHub OIDC.
     permissions:
       id-token: write
       contents: read
 
     steps:
+
+      # --------------------------------------------------------
+      # Checkout
+      # --------------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --------------------------------------------------------
+      # Install Terraform
+      # --------------------------------------------------------
+
       - name: Install Terraform
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          sudo apt-get update
-          sudo apt-get install -y gnupg software-properties-common curl
+          TERRAFORM_VERSION="${TERRAFORM_VERSION}"
+          TERRAFORM_URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
 
-          curl -fsSL https://apt.releases.hashicorp.com/gpg \
-            | gpg --dearmor \
-            | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
+          echo "Installing Terraform ${TERRAFORM_VERSION}"
 
-          echo \
-            "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
-            | sudo tee /etc/apt/sources.list.d/hashicorp.list
+          curl -fsSL \
+            "${TERRAFORM_URL}" \
+            -o /tmp/terraform.zip
 
-          sudo apt-get update
-          sudo apt-get install -y terraform
+          unzip -o \
+            /tmp/terraform.zip \
+            -d /tmp/terraform
+
+          sudo install \
+            /tmp/terraform/terraform \
+            /usr/local/bin/terraform
+
+          rm -rf \
+            /tmp/terraform.zip \
+            /tmp/terraform
+
+      # --------------------------------------------------------
+      # Verify Terraform
+      # --------------------------------------------------------
 
       - name: Terraform version
-        run: terraform version
+        run: |
+          terraform version
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.2.3
-        with:
-          role-to-assume: arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev
-          aws-region: ap-south-2
-          role-session-name: GitHubActionsTerraformPlan
-          allowed-account-ids: 438064565553
+      # --------------------------------------------------------
+      # Verify AWS CLI
+      #
+      # Ubuntu GitHub-hosted runners include AWS CLI.
+      # We verify it rather than installing another copy.
+      # --------------------------------------------------------
+
+      - name: Verify AWS CLI
+        run: |
+          set -euo pipefail
+
+          aws --version
+
+      # --------------------------------------------------------
+      # Configure AWS credentials using GitHub OIDC
+      #
+      # IMPORTANT:
+      #
+      # We intentionally do NOT use:
+      #
+      # aws-actions/configure-aws-credentials
+      #
+      # because GitHub previously returned HTTP 429 while
+      # downloading that action.
+      #
+      # Instead we directly:
+      #
+      # GitHub OIDC token
+      #        |
+      #        v
+      # sts:AssumeRoleWithWebIdentity
+      #        |
+      #        v
+      # Temporary AWS credentials
+      # --------------------------------------------------------
+
+      - name: Configure AWS credentials with GitHub OIDC
+        shell: bash
+        env:
+          AWS_ROLE_ARN: arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "Requesting GitHub OIDC token"
+          echo "=========================================="
+
+          if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
+            echo "ERROR: ACTIONS_ID_TOKEN_REQUEST_TOKEN is not available."
+            echo "Check that job permissions include id-token: write."
+            exit 1
+          fi
+
+          if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+            echo "ERROR: ACTIONS_ID_TOKEN_REQUEST_URL is not available."
+            echo "Check that job permissions include id-token: write."
+            exit 1
+          fi
+
+          OIDC_RESPONSE="$(
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --retry 3 \
+              --retry-delay 2 \
+              --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com"
+          )"
+
+          OIDC_TOKEN="$(
+            python3 -c '
+          import json
+          import sys
+
+          response = json.load(sys.stdin)
+
+          token = response.get("value", "")
+
+          if not token:
+              raise SystemExit("OIDC token was empty")
+
+          print(token)
+          ' <<< "${OIDC_RESPONSE}"
+          )"
+
+          echo "GitHub OIDC token successfully received."
+
+          echo
+          echo "=========================================="
+          echo "Assuming AWS IAM role"
+          echo "=========================================="
+
+          CREDS="$(
+            aws sts assume-role-with-web-identity \
+              --role-arn "${AWS_ROLE_ARN}" \
+              --role-session-name "GitHubActionsTerraformPlan" \
+              --web-identity-token "${OIDC_TOKEN}" \
+              --duration-seconds 3600 \
+              --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+              --output text
+          )"
+
+          read -r \
+            AWS_ACCESS_KEY_ID \
+            AWS_SECRET_ACCESS_KEY \
+            AWS_SESSION_TOKEN <<< "${CREDS}"
+
+          if [[ -z "${AWS_ACCESS_KEY_ID}" ]]; then
+            echo "ERROR: AWS_ACCESS_KEY_ID was not returned."
+            exit 1
+          fi
+
+          if [[ -z "${AWS_SECRET_ACCESS_KEY}" ]]; then
+            echo "ERROR: AWS_SECRET_ACCESS_KEY was not returned."
+            exit 1
+          fi
+
+          if [[ -z "${AWS_SESSION_TOKEN}" ]]; then
+            echo "ERROR: AWS_SESSION_TOKEN was not returned."
+            exit 1
+          fi
+
+          {
+            echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}"
+            echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}"
+            echo "AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}"
+            echo "AWS_REGION=${AWS_REGION}"
+            echo "AWS_DEFAULT_REGION=${AWS_REGION}"
+          } >> "${GITHUB_ENV}"
+
+          echo "AWS temporary credentials configured successfully."
+
+      # --------------------------------------------------------
+      # Verify AWS identity
+      # --------------------------------------------------------
 
       - name: Verify AWS identity
         run: |
-          set -e
+          set -euo pipefail
 
-          echo "===== AWS IDENTITY ====="
+          echo "=========================================="
+          echo "AWS IDENTITY"
+          echo "=========================================="
+
           aws sts get-caller-identity
 
           echo
-          echo "===== AWS REGION ====="
+          echo "=========================================="
+          echo "AWS REGION"
+          echo "=========================================="
+
           aws configure get region
+
+      # --------------------------------------------------------
+      # Verify Terraform state bucket
+      # --------------------------------------------------------
 
       - name: Verify Terraform state bucket
         run: |
-          set -e
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "TERRAFORM STATE BUCKET"
+          echo "=========================================="
 
           aws s3api head-bucket \
-            --bucket aws-production-platform-terraform-state \
-            --region ap-south-2
+            --bucket "${STATE_BUCKET}" \
+            --region "${AWS_REGION}"
 
           echo "Terraform state bucket is accessible."
 
-      - name: Terraform DEV initialization
+      # --------------------------------------------------------
+      # Verify SSM permission
+      #
+      # This is required by:
+      #
+      # module.compute.data.aws_ssm_parameter.amazon_linux_2023_ami
+      # --------------------------------------------------------
+
+      - name: Verify SSM access
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "SSM AMI PARAMETER"
+          echo "=========================================="
+
+          aws ssm get-parameter \
+            --name "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64" \
+            --region "${AWS_REGION}" \
+            --query 'Parameter.[Name,Type]' \
+            --output table
+
+      # --------------------------------------------------------
+      # Verify Access Analyzer permission
+      #
+      # This is required by:
+      #
+      # module.iam.aws_accessanalyzer_analyzer.this
+      # --------------------------------------------------------
+
+      - name: Verify Access Analyzer access
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "ACCESS ANALYZER"
+          echo "=========================================="
+
+          aws accessanalyzer get-analyzer \
+            --analyzer-name dev-platform-access-analyzer \
+            --region "${AWS_REGION}" \
+            --query 'analyzer.[name,status,type]' \
+            --output table
+
+      # --------------------------------------------------------
+      # Terraform DEV initialization
+      #
+      # IMPORTANT:
+      #
+      # backend=false is NOT used here.
+      #
+      # This is a real AWS-backed Terraform plan and must
+      # connect to the S3 remote backend.
+      # --------------------------------------------------------
+
+      - name: Terraform DEV init
         working-directory: environments/dev
         run: |
-          terraform init -input=false
+          set -euo pipefail
+
+          terraform init \
+            -input=false \
+            -reconfigure
+
+      # --------------------------------------------------------
+      # Terraform DEV plan
+      # --------------------------------------------------------
 
       - name: Terraform DEV plan
         working-directory: environments/dev
         run: |
+          set -euo pipefail
+
           terraform plan \
             -input=false \
-            -no-color \
-            -out=dev-plan.tfplan
+            -no-color
 
-      - name: Show Terraform plan summary
-        working-directory: environments/dev
+      # --------------------------------------------------------
+      # Final message
+      # --------------------------------------------------------
+
+      - name: DEV plan complete
         run: |
-          terraform show \
-            -no-color \
-            dev-plan.tfplan
+          echo "=========================================="
+          echo "Terraform DEV plan completed successfully"
+          echo "=========================================="
