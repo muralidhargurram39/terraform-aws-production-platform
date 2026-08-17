@@ -7,12 +7,13 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  terraform-ci:
+  terraform-validation:
     name: Terraform Validation
     runs-on: ubuntu-latest
 
@@ -71,3 +72,90 @@ jobs:
           bash -n scripts/destroy-dev.sh
           bash -n scripts/validate.sh
           bash -n scripts/app-bootstrap.sh
+
+  terraform-plan:
+    name: Terraform DEV Plan
+    runs-on: ubuntu-latest
+
+    # Only execute this job when explicitly started manually.
+    if: github.event_name == 'workflow_dispatch'
+
+    environment: dev
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Terraform
+        run: |
+          set -e
+
+          sudo apt-get update
+          sudo apt-get install -y gnupg software-properties-common curl
+
+          curl -fsSL https://apt.releases.hashicorp.com/gpg \
+            | gpg --dearmor \
+            | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
+
+          echo \
+            "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+          sudo apt-get update
+          sudo apt-get install -y terraform
+
+      - name: Terraform version
+        run: terraform version
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev
+          aws-region: ap-south-2
+          role-session-name: GitHubActionsTerraformPlan
+          allowed-account-ids: 438064565553
+
+      - name: Verify AWS identity
+        run: |
+          set -e
+
+          echo "===== AWS IDENTITY ====="
+          aws sts get-caller-identity
+
+          echo
+          echo "===== AWS REGION ====="
+          aws configure get region
+
+      - name: Verify Terraform state bucket
+        run: |
+          set -e
+
+          aws s3api head-bucket \
+            --bucket aws-production-platform-terraform-state \
+            --region ap-south-2
+
+          echo "Terraform state bucket is accessible."
+
+      - name: Terraform DEV initialization
+        working-directory: environments/dev
+        run: |
+          terraform init -input=false
+
+      - name: Terraform DEV plan
+        working-directory: environments/dev
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -out=dev-plan.tfplan
+
+      - name: Show Terraform plan summary
+        working-directory: environments/dev
+        run: |
+          terraform show \
+            -no-color \
+            dev-plan.tfplan
