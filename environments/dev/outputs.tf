@@ -102,3 +102,8 @@ output "autoscaling_group_name" {
   description = "Development application Auto Scaling Group name."
   value       = module.compute.autoscaling_group_name
 }
+
+output "alb_zone_id" {
+  description = "Development Application Load Balancer Route 53 hosted zone ID."
+  value       = module.compute.alb_zone_id
+}

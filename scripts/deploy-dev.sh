@@ -178,7 +178,7 @@ rm -f dev-deploy.tfplan
 
 echo
 echo "=============================================="
-echo " DEV DEPLOYMENT COMPLETE"
+echo " DEV INFRASTRUCTURE DEPLOYED"
 echo "=============================================="
 
 echo
@@ -186,15 +186,162 @@ echo "Terraform outputs:"
 terraform output
 
 echo
-echo "Checking ALB..."
+echo "Reading new ALB details..."
 
 ALB_DNS="$(
   terraform output -raw alb_dns_name 2>/dev/null || true
 )"
 
-if [[ -n "${ALB_DNS}" ]]; then
-  echo "ALB DNS: ${ALB_DNS}"
+ALB_ZONE_ID="$(
+  terraform output -raw alb_zone_id 2>/dev/null || true
+)"
+
+if [[ -z "${ALB_DNS}" || "${ALB_DNS}" == "null" ]]; then
+  echo "ERROR: Unable to determine DEV ALB DNS name."
+  rm -f dev-deploy.tfplan
+  exit 1
 fi
+
+if [[ -z "${ALB_ZONE_ID}" || "${ALB_ZONE_ID}" == "null" ]]; then
+  echo "ERROR: Unable to determine DEV ALB hosted zone ID."
+  rm -f dev-deploy.tfplan
+  exit 1
+fi
+
+echo "ALB DNS     : ${ALB_DNS}"
+echo "ALB Zone ID : ${ALB_ZONE_ID}"
+
+echo
+echo "=============================================="
+echo " UPDATING PERSISTENT ROUTE 53"
+echo "=============================================="
+
+ROUTE53_DIR="${PROJECT_ROOT}/global/route53"
+
+if [[ ! -d "${ROUTE53_DIR}" ]]; then
+  echo "ERROR: Global Route 53 directory not found:"
+  echo "${ROUTE53_DIR}"
+  exit 1
+fi
+
+cd "${ROUTE53_DIR}"
+
+echo
+echo "Initializing global Route 53 Terraform..."
+terraform init
+
+echo
+echo "Validating global Route 53 Terraform..."
+terraform validate
+
+echo
+echo "Checking global Route 53 state..."
+
+GLOBAL_STATE_LIST="$(
+  terraform state list
+)"
+
+if ! grep -q '^aws_route53_zone\.this$' <<< "${GLOBAL_STATE_LIST}"; then
+  echo "ERROR: Persistent Route 53 hosted zone is not present in global Terraform state."
+  echo "Refusing to modify DNS."
+  exit 1
+fi
+
+if ! grep -q '^aws_route53_record\.dev\[0\]$' <<< "${GLOBAL_STATE_LIST}"; then
+  echo "ERROR: Persistent DEV Route 53 record is not present in global Terraform state."
+  echo "Refusing to modify DNS."
+  exit 1
+fi
+
+echo "Global Route 53 state verified."
+
+echo
+echo "Creating Route 53 update plan..."
+
+ROUTE53_PLAN="route53-dev-dns.tfplan"
+
+set +e
+terraform plan \
+  -out="${ROUTE53_PLAN}" \
+  -var="domain_name=muralidharops.com" \
+  -var="dev_alb_dns_name=${ALB_DNS}" \
+  -var="dev_alb_zone_id=${ALB_ZONE_ID}"
+ROUTE53_PLAN_EXIT_CODE=$?
+set -e
+
+if [[ ${ROUTE53_PLAN_EXIT_CODE} -ne 0 ]]; then
+  echo
+  echo "ERROR: Route 53 Terraform plan failed."
+  rm -f "${ROUTE53_PLAN}"
+  exit "${ROUTE53_PLAN_EXIT_CODE}"
+fi
+
+echo
+echo "Inspecting Route 53 plan..."
+
+ROUTE53_PLAN_TEXT="$(
+  terraform show -no-color "${ROUTE53_PLAN}"
+)"
+
+if grep -Eq \
+  'aws_route53_zone\.this.*(destroy|replace)|aws_route53_zone\.this.*must be replaced' \
+  <<< "${ROUTE53_PLAN_TEXT}"; then
+
+  echo
+  echo "ERROR: Route 53 plan attempts to modify or replace"
+  echo "the persistent hosted zone."
+  echo "Refusing to apply."
+  rm -f "${ROUTE53_PLAN}"
+  exit 1
+fi
+
+if grep -Eq \
+  'aws_acm_certificate|aws_acm_certificate_validation' \
+  <<< "${ROUTE53_PLAN_TEXT}"; then
+
+  echo
+  echo "ERROR: Route 53 plan unexpectedly contains ACM resources."
+  echo "Refusing to apply."
+  rm -f "${ROUTE53_PLAN}"
+  exit 1
+fi
+
+if grep -q \
+  "No changes. Your infrastructure matches the configuration." \
+  <<< "${ROUTE53_PLAN_TEXT}"; then
+
+  echo
+  echo "=============================================="
+  echo " ROUTE 53 ALREADY UP TO DATE"
+  echo "=============================================="
+  echo
+  echo "dev.muralidharops.com already points to:"
+  echo "${ALB_DNS}"
+  echo
+
+  rm -f "${ROUTE53_PLAN}"
+else
+
+  echo
+  echo "Route 53 requires an update."
+  echo
+  echo "dev.muralidharops.com"
+  echo "        ->"
+  echo "${ALB_DNS}"
+  echo
+
+  echo "Applying Route 53 DNS update..."
+
+  terraform apply "${ROUTE53_PLAN}"
+
+  rm -f "${ROUTE53_PLAN}"
+
+  echo
+  echo "Persistent DNS updated:"
+  echo "dev.muralidharops.com -> ${ALB_DNS}"
+fi
+
+cd "${DEV_DIR}"
 
 echo
 echo "Checking target health..."
