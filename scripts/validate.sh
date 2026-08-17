@@ -2,6 +2,15 @@
 
 set -euo pipefail
 
+cleanup() {
+  rm -f \
+    "${DEV_DIR}/dev-validation.tfplan" \
+    "${ROUTE53_DIR}/route53-validation.tfplan" \
+    "${ACM_DIR}/acm-validation.tfplan"
+}
+
+trap cleanup EXIT
+
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 AWS_REGION="ap-south-2"
@@ -69,7 +78,30 @@ terraform validate
 echo
 echo "===== 5. DEV PLAN ====="
 
-terraform plan -input=false
+DEV_PLAN="${DEV_DIR}/dev-validation.tfplan"
+
+terraform plan \
+  -input=false \
+  -out="${DEV_PLAN}"
+
+DEV_PLAN_TEXT="$(
+  terraform show -no-color "${DEV_PLAN}"
+)"
+
+if ! grep -q \
+  "No changes. Your infrastructure matches the configuration." \
+  <<< "${DEV_PLAN_TEXT}"; then
+
+  echo
+  echo "DEV Terraform drift detected:"
+  echo
+  echo "${DEV_PLAN_TEXT}"
+
+  fail "DEV Terraform plan contains changes."
+fi
+
+echo
+echo "DEV Terraform plan: NO CHANGES"
 
 echo
 echo "DEV Terraform: OK"
@@ -175,6 +207,41 @@ echo "ACM status : ${ACM_STATUS}"
 echo "ACM ARN    : ${ACM_ARN}"
 
 echo
+echo "Checking ACM Terraform plan..."
+
+ACM_PLAN="${ACM_DIR}/acm-validation.tfplan"
+
+cd "${ACM_DIR}"
+
+terraform plan \
+  -input=false \
+  -out="${ACM_PLAN}" \
+  -var="domain_name=${DOMAIN_NAME}" \
+  -var="route53_zone_id=${ZONE_ID}"
+
+ACM_PLAN_TEXT="$(
+  terraform show -no-color "${ACM_PLAN}"
+)"
+
+if ! grep -q \
+  "No changes. Your infrastructure matches the configuration." \
+  <<< "${ACM_PLAN_TEXT}"; then
+
+  echo
+  echo "ACM Terraform drift detected:"
+  echo
+  echo "${ACM_PLAN_TEXT}"
+
+  rm -f "${ACM_PLAN}"
+
+  fail "Global ACM Terraform plan contains changes."
+fi
+
+rm -f "${ACM_PLAN}"
+
+echo "ACM Terraform plan: NO CHANGES"
+
+echo
 echo "===== 10. DEV ALB ====="
 
 cd "${DEV_DIR}"
@@ -202,6 +269,45 @@ TARGET_GROUP_ARN="$(
 
 echo "ALB DNS     : ${ALB_DNS}"
 echo "ALB Zone ID : ${ALB_ZONE_ID}"
+
+echo
+echo "===== 10A. ROUTE 53 TERRAFORM DRIFT CHECK ====="
+
+cd "${ROUTE53_DIR}"
+
+terraform init -input=false >/dev/null
+terraform validate
+
+ROUTE53_PLAN="${ROUTE53_DIR}/route53-validation.tfplan"
+
+terraform plan \
+  -input=false \
+  -out="${ROUTE53_PLAN}" \
+  -var="domain_name=${ROOT_DOMAIN}" \
+  -var="dev_alb_dns_name=${ALB_DNS}" \
+  -var="dev_alb_zone_id=${ALB_ZONE_ID}"
+
+ROUTE53_PLAN_TEXT="$(
+  terraform show -no-color "${ROUTE53_PLAN}"
+)"
+
+if ! grep -q \
+  "No changes. Your infrastructure matches the configuration." \
+  <<< "${ROUTE53_PLAN_TEXT}"; then
+
+  echo
+  echo "Route 53 Terraform drift detected:"
+  echo
+  echo "${ROUTE53_PLAN_TEXT}"
+
+  rm -f "${ROUTE53_PLAN}"
+
+  fail "Global Route 53 Terraform plan contains changes."
+fi
+
+rm -f "${ROUTE53_PLAN}"
+
+echo "Route 53 Terraform plan: NO CHANGES"
 
 echo
 echo "===== 11. TARGET HEALTH ====="
