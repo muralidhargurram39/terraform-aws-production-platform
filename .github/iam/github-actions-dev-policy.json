@@ -59,6 +59,22 @@
         "sts:GetCallerIdentity"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "TerraformSSMRead",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter"
+      ],
+      "Resource": "arn:aws:ssm:ap-south-2::parameter/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+    },
+    {
+      "Sid": "TerraformAccessAnalyzerRead",
+      "Effect": "Allow",
+      "Action": [
+        "access-analyzer:GetAnalyzer"
+      ],
+      "Resource": "arn:aws:access-analyzer:ap-south-2:438064565553:analyzer/dev-platform-access-analyzer"
     }
   ]
 }
