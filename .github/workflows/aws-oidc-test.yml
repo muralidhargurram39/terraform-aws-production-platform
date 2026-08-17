@@ -18,54 +18,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Inspect GitHub OIDC claims
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "===== GITHUB OIDC CLAIMS ====="
-
-          OIDC_TOKEN="$(
-            curl -sSf \
-              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com"
-          )"
-
-          export OIDC_TOKEN
-
-          python3 <<'PY'
-          import base64
-          import json
-          import os
-
-          token = json.loads(os.environ["OIDC_TOKEN"])["value"]
-
-          payload = token.split(".")[1]
-          payload += "=" * (-len(payload) % 4)
-
-          claims = json.loads(
-              base64.urlsafe_b64decode(payload).decode("utf-8")
-          )
-
-          interesting = [
-              "iss",
-              "aud",
-              "sub",
-              "repository",
-              "repository_owner",
-              "repository_id",
-              "repository_owner_id",
-              "environment",
-              "ref",
-              "workflow",
-              "event_name",
-          ]
-
-          for key in interesting:
-              if key in claims:
-                  print(f"{key}: {claims[key]}")
-          PY
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
@@ -76,18 +28,60 @@ jobs:
 
       - name: Verify AWS identity
         run: |
+          set -e
+
           echo "===== AWS IDENTITY ====="
           aws sts get-caller-identity
 
           echo
           echo "===== AWS REGION ====="
-          aws configure get region
+          echo "AWS_REGION=${AWS_REGION:-}"
+          echo "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-}"
+
+          test "${AWS_REGION:-}" = "ap-south-2"
+
+      - name: Verify read-only access
+        run: |
+          set -e
+
+          echo "===== EC2 ====="
+
+          aws ec2 describe-vpcs \
+            --region ap-south-2 \
+            --query 'Vpcs[0:3].[VpcId,CidrBlock]' \
+            --output table
+
+          echo
+          echo "===== ROUTE 53 ====="
+
+          aws route53 list-hosted-zones \
+            --query 'HostedZones[0:5].[Id,Name]' \
+            --output table
+
+          echo
+          echo "===== ACM ====="
+
+          aws acm list-certificates \
+            --region ap-south-2 \
+            --query 'CertificateSummaryList[0:5].[DomainName,Status]' \
+            --output table
+
+          echo
+          echo "===== ELASTIC LOAD BALANCING ====="
+
+          aws elbv2 describe-load-balancers \
+            --region ap-south-2 \
+            --query 'LoadBalancers[0:5].[LoadBalancerName,State.Code,DNSName]' \
+            --output table
 
       - name: Verify state bucket access
         run: |
+          set -e
+
           echo "===== TERRAFORM STATE BUCKET ====="
 
           aws s3api head-bucket \
-            --bucket aws-production-platform-terraform-state
+            --bucket aws-production-platform-terraform-state \
+            --region ap-south-2
 
           echo "Terraform state bucket is accessible."
