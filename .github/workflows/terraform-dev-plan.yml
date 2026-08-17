@@ -30,7 +30,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
-          role-to-assume: arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev-Apply
+          role-to-assume: arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev
           aws-region: ap-south-2
           role-session-name: GitHubActionsTerraformPlan
           allowed-account-ids: 438064565553
