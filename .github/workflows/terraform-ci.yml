@@ -37,19 +37,19 @@ jobs:
       - name: Validate DEV Terraform
         working-directory: environments/dev
         run: |
-          terraform init -input=false
+          terraform init -backend=false -input=false
           terraform validate
 
       - name: Validate Route 53 Terraform
         working-directory: global/route53
         run: |
-          terraform init -input=false
+          terraform init -backend=false -input=false
           terraform validate
 
       - name: Validate ACM Terraform
         working-directory: global/acm
         run: |
-          terraform init -input=false
+          terraform init -backend=false -input=false
           terraform validate
 
       - name: Shell syntax validation
