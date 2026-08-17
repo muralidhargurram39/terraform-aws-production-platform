@@ -1,0 +1,116 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-south-2
+  TF_VERSION: "1.12.2"
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+
+    environment: dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActionsTerraformPlan
+          allowed-account-ids: 438064565553
+
+      - name: Verify AWS identity
+        run: |
+          echo "===== AWS IDENTITY ====="
+          aws sts get-caller-identity
+
+      - name: Terraform format check
+        run: |
+          terraform fmt -check -recursive environments/dev
+          terraform fmt -check -recursive global/route53
+          terraform fmt -check -recursive global/acm
+
+      - name: Terraform shell validation
+        run: |
+          bash -n scripts/deploy-dev.sh
+          bash -n scripts/destroy-dev.sh
+          bash -n scripts/validate.sh
+          bash -n scripts/app-bootstrap.sh
+
+      - name: Initialize DEV Terraform
+        working-directory: environments/dev
+        run: |
+          terraform init -input=false
+
+      - name: Validate DEV Terraform
+        working-directory: environments/dev
+        run: |
+          terraform validate
+
+      - name: Plan DEV Terraform
+        working-directory: environments/dev
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -out=dev.tfplan
+
+      - name: Initialize Route 53 Terraform
+        working-directory: global/route53
+        run: |
+          terraform init -input=false
+
+      - name: Validate Route 53 Terraform
+        working-directory: global/route53
+        run: |
+          terraform validate
+
+      - name: Plan Route 53 Terraform
+        working-directory: global/route53
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -var="domain_name=muralidharops.com" \
+            -var="dev_alb_dns_name=$(cd ../../environments/dev && terraform output -raw alb_dns_name)" \
+            -var="dev_alb_zone_id=$(cd ../../environments/dev && terraform output -raw alb_zone_id)"
+
+      - name: Initialize ACM Terraform
+        working-directory: global/acm
+        run: |
+          terraform init -input=false
+
+      - name: Validate ACM Terraform
+        working-directory: global/acm
+        run: |
+          terraform validate
+
+      - name: Plan ACM Terraform
+        working-directory: global/acm
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -var="domain_name=dev.muralidharops.com" \
+            -var="route53_zone_id=Z10409762UD7X0S0XOTXL"
