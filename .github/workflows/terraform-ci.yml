@@ -1,0 +1,60 @@
+name: Terraform CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-ci:
+    name: Terraform Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Terraform version
+        run: terraform version
+
+      - name: Terraform format check
+        run: |
+          terraform fmt -check -recursive environments/dev
+          terraform fmt -check -recursive global/route53
+          terraform fmt -check -recursive global/acm
+
+      - name: Validate DEV Terraform
+        working-directory: environments/dev
+        run: |
+          terraform init -input=false
+          terraform validate
+
+      - name: Validate Route 53 Terraform
+        working-directory: global/route53
+        run: |
+          terraform init -input=false
+          terraform validate
+
+      - name: Validate ACM Terraform
+        working-directory: global/acm
+        run: |
+          terraform init -input=false
+          terraform validate
+
+      - name: Shell syntax validation
+        run: |
+          bash -n scripts/deploy-dev.sh
+          bash -n scripts/destroy-dev.sh
+          bash -n scripts/validate.sh
+          bash -n scripts/app-bootstrap.sh
