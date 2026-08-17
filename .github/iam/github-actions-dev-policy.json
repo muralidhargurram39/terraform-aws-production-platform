@@ -1,0 +1,64 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TerraformStateList",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::aws-production-platform-terraform-state"
+    },
+    {
+      "Sid": "TerraformStateObject",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::aws-production-platform-terraform-state/environments/dev/terraform.tfstate",
+        "arn:aws:s3:::aws-production-platform-terraform-state/global/route53/terraform.tfstate",
+        "arn:aws:s3:::aws-production-platform-terraform-state/global/acm/terraform.tfstate"
+      ]
+    },
+    {
+      "Sid": "TerraformStateLock",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::aws-production-platform-terraform-state/environments/dev/terraform.tfstate.tflock",
+        "arn:aws:s3:::aws-production-platform-terraform-state/global/route53/terraform.tfstate.tflock",
+        "arn:aws:s3:::aws-production-platform-terraform-state/global/acm/terraform.tfstate.tflock"
+      ]
+    },
+    {
+      "Sid": "TerraformReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "autoscaling:Describe*",
+        "acm:Describe*",
+        "acm:List*",
+        "cloudwatch:Describe*",
+        "cloudwatch:Get*",
+        "cloudwatch:List*",
+        "ec2:Describe*",
+        "elasticloadbalancing:Describe*",
+        "iam:Get*",
+        "iam:List*",
+        "logs:Describe*",
+        "logs:List*",
+        "route53:Get*",
+        "route53:List*",
+        "s3:Get*",
+        "s3:List*",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
