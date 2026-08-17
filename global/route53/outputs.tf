@@ -12,3 +12,8 @@ output "name_servers" {
   description = "Authoritative Route 53 name servers."
   value       = aws_route53_zone.this.name_servers
 }
+
+output "dev_record_name" {
+  description = "DEV application DNS record."
+  value       = var.dev_alb_dns_name != "" ? "dev.${var.domain_name}" : null
+}

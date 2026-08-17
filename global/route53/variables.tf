@@ -19,3 +19,15 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "dev_alb_dns_name" {
+  description = "DNS name of the current DEV Application Load Balancer."
+  type        = string
+  default     = ""
+}
+
+variable "dev_alb_zone_id" {
+  description = "Route 53 hosted zone ID of the current DEV Application Load Balancer."
+  type        = string
+  default     = ""
+}
