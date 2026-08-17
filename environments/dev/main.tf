@@ -17,6 +17,26 @@ locals {
   }
 }
 
+data "terraform_remote_state" "acm" {
+  backend = "s3"
+
+  config = {
+    bucket = "aws-production-platform-terraform-state"
+    key    = "global/acm/terraform.tfstate"
+    region = "ap-south-2"
+  }
+}
+
+data "terraform_remote_state" "route53" {
+  backend = "s3"
+
+  config = {
+    bucket = "aws-production-platform-terraform-state"
+    key    = "global/route53/terraform.tfstate"
+    region = "ap-south-2"
+  }
+}
+
 module "vpc" {
   source = "../../modules/vpc"
 
@@ -106,6 +126,8 @@ module "compute" {
 
   ec2_instance_profile_name = module.iam.ec2_instance_profile_name
 
+  certificate_arn = data.terraform_remote_state.acm.outputs.certificate_arn
+
   instance_type = "t3.micro"
 
   min_size         = 2
@@ -121,4 +143,17 @@ module "compute" {
   user_data = file("${path.root}/../../scripts/app-bootstrap.sh")
 
   tags = local.common_tags
+}
+
+resource "aws_route53_record" "dev" {
+  zone_id = data.terraform_remote_state.route53.outputs.zone_id
+
+  name = "dev.muralidharops.com"
+  type = "A"
+
+  alias {
+    name                   = module.compute.alb_dns_name
+    zone_id                = module.compute.alb_zone_id
+    evaluate_target_health = true
+  }
 }

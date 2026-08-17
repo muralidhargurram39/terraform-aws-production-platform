@@ -157,6 +157,33 @@ resource "aws_lb_listener" "http" {
   protocol = "HTTP"
 
   default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "${var.name}-alb-http-listener"
+    }
+  )
+}
+
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.app.arn
+
+  port            = 443
+  protocol        = "HTTPS"
+  certificate_arn = var.certificate_arn
+
+  ssl_policy = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+
+  default_action {
     type = "forward"
 
     forward {
@@ -169,7 +196,7 @@ resource "aws_lb_listener" "http" {
   tags = merge(
     local.common_tags,
     {
-      Name = "${var.name}-alb-http-listener"
+      Name = "${var.name}-alb-https-listener"
     }
   )
 }
