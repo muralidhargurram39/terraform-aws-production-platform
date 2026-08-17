@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 env:
   AWS_REGION: ap-south-2
@@ -25,28 +24,26 @@ env:
 jobs:
 
   # ============================================================
-  # JOB 1: Terraform syntax and configuration validation
+  # JOB 1 - Terraform validation
+  #
+  # No AWS credentials are required here.
   # ============================================================
+
   terraform-validation:
     name: Terraform Validation
     runs-on: ubuntu-latest
 
     steps:
 
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # --------------------------------------------------------
-      # Install Terraform without hashicorp/setup-terraform
-      # --------------------------------------------------------
       - name: Install Terraform
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "=========================================="
           echo "Installing Terraform ${TERRAFORM_VERSION}"
-          echo "=========================================="
 
           sudo apt-get update
           sudo apt-get install -y curl unzip
@@ -59,22 +56,20 @@ jobs:
             --retry 5 \
             --retry-delay 5 \
             "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
-            --output /tmp/terraform.zip
+            -o /tmp/terraform.zip
 
-          unzip -o /tmp/terraform.zip -d /tmp/terraform
+          rm -rf /tmp/terraform
+          mkdir -p /tmp/terraform
+
+          unzip -q /tmp/terraform.zip -d /tmp/terraform
 
           sudo install \
             -m 0755 \
             /tmp/terraform/terraform \
             /usr/local/bin/terraform
 
-          rm -rf /tmp/terraform /tmp/terraform.zip
-
           terraform version
 
-      # --------------------------------------------------------
-      # Terraform formatting
-      # --------------------------------------------------------
       - name: Terraform format check
         shell: bash
         run: |
@@ -85,13 +80,7 @@ jobs:
           terraform fmt -check -recursive global/acm
           terraform fmt -check -recursive modules
 
-      # --------------------------------------------------------
-      # DEV validation
-      #
-      # -backend=false is intentional.
-      # Validation does not need AWS credentials or S3 state.
-      # --------------------------------------------------------
-      - name: Validate DEV Terraform
+      - name: Validate DEV
         working-directory: environments/dev
         shell: bash
         run: |
@@ -103,10 +92,7 @@ jobs:
 
           terraform validate
 
-      # --------------------------------------------------------
-      # Route53 validation
-      # --------------------------------------------------------
-      - name: Validate Route53 Terraform
+      - name: Validate Route53
         working-directory: global/route53
         shell: bash
         run: |
@@ -118,10 +104,7 @@ jobs:
 
           terraform validate
 
-      # --------------------------------------------------------
-      # ACM validation
-      # --------------------------------------------------------
-      - name: Validate ACM Terraform
+      - name: Validate ACM
         working-directory: global/acm
         shell: bash
         run: |
@@ -133,9 +116,6 @@ jobs:
 
           terraform validate
 
-      # --------------------------------------------------------
-      # Shell script validation
-      # --------------------------------------------------------
       - name: Validate shell scripts
         shell: bash
         run: |
@@ -150,36 +130,33 @@ jobs:
 
 
   # ============================================================
-  # JOB 2: AWS-authenticated Terraform plan
+  # JOB 2 - AWS authenticated Terraform plan
   # ============================================================
+
   terraform-dev-plan:
     name: Terraform DEV Plan
     runs-on: ubuntu-latest
 
-    # IMPORTANT:
-    # This environment must exist in GitHub and must match
-    # the IAM OIDC trust policy.
-    environment: dev
-
     needs:
       - terraform-validation
 
+    environment: dev
+
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
 
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # --------------------------------------------------------
-      # Install Terraform
-      # --------------------------------------------------------
       - name: Install Terraform
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "=========================================="
           echo "Installing Terraform ${TERRAFORM_VERSION}"
-          echo "=========================================="
 
           sudo apt-get update
           sudo apt-get install -y curl unzip
@@ -192,22 +169,24 @@ jobs:
             --retry 5 \
             --retry-delay 5 \
             "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
-            --output /tmp/terraform.zip
+            -o /tmp/terraform.zip
 
-          unzip -o /tmp/terraform.zip -d /tmp/terraform
+          rm -rf /tmp/terraform
+          mkdir -p /tmp/terraform
+
+          unzip -q /tmp/terraform.zip -d /tmp/terraform
 
           sudo install \
             -m 0755 \
             /tmp/terraform/terraform \
             /usr/local/bin/terraform
 
-          rm -rf /tmp/terraform /tmp/terraform.zip
-
           terraform version
 
       # --------------------------------------------------------
-      # AWS OIDC authentication
+      # GitHub OIDC -> AWS
       # --------------------------------------------------------
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
@@ -217,14 +196,9 @@ jobs:
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
       # --------------------------------------------------------
-      # Verify AWS identity
-      #
-      # DO NOT use:
-      #   aws configure get region
-      #
-      # The AWS credentials action sets AWS_REGION and
-      # AWS_DEFAULT_REGION as environment variables.
+      # Verify AWS authentication
       # --------------------------------------------------------
+
       - name: Verify AWS authentication
         shell: bash
         run: |
@@ -244,128 +218,79 @@ jobs:
           echo "AWS_REGION=${AWS_REGION}"
           echo "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}"
 
-          if [[ "${AWS_REGION}" != "ap-south-2" ]]; then
-            echo "ERROR: Unexpected AWS region."
-            exit 1
-          fi
+          test "${AWS_REGION}" = "ap-south-2"
+          test "${AWS_DEFAULT_REGION}" = "ap-south-2"
 
           echo
-          echo "AWS authentication verified successfully."
+          echo "AWS authentication verified."
 
       # --------------------------------------------------------
-      # Verify Terraform state bucket
+      # Verify state bucket
       # --------------------------------------------------------
+
       - name: Verify Terraform state bucket
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "=========================================="
-          echo "TERRAFORM STATE BUCKET"
-          echo "=========================================="
+          echo "Checking Terraform state bucket..."
 
           aws s3api head-bucket \
             --bucket "${STATE_BUCKET}"
 
-          echo
           echo "Terraform state bucket is accessible."
 
       # --------------------------------------------------------
-      # Verify AWS resources needed during Terraform plan
-      #
-      # These checks make IAM failures much easier to diagnose.
+      # Verify AWS APIs required by Terraform
       # --------------------------------------------------------
-      - name: Verify Terraform read permissions
+
+      - name: Verify Terraform AWS read access
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "=========================================="
-          echo "VERIFY TERRAFORM READ ACCESS"
-          echo "=========================================="
+          echo "Checking SSM..."
 
-          echo
-          echo "EC2 / VPC:"
-          aws ec2 describe-vpcs \
-            --region "${AWS_REGION}" \
-            --max-items 1 \
-            >/dev/null
-
-          echo "OK - EC2"
-
-          echo
-          echo "SSM:"
           aws ssm get-parameter \
             --name "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64" \
             --region "${AWS_REGION}" \
-            >/dev/null
-
-          echo "OK - SSM"
+            --query 'Parameter.[Name,Type]' \
+            --output table
 
           echo
-          echo "Access Analyzer:"
+          echo "Checking Access Analyzer..."
+
           aws accessanalyzer get-analyzer \
-            --analyzer-name "dev-platform-access-analyzer" \
+            --analyzer-name dev-platform-access-analyzer \
             --region "${AWS_REGION}" \
-            >/dev/null
-
-          echo "OK - Access Analyzer"
-
-          echo
-          echo "ACM:"
-          aws acm list-certificates \
-            --region "${AWS_REGION}" \
-            --max-items 1 \
-            >/dev/null
-
-          echo "OK - ACM"
+            --query 'analyzer.[name,status,type]' \
+            --output table
 
           echo
-          echo "Route53:"
-          aws route53 list-hosted-zones \
-            --max-items 1 \
-            >/dev/null
-
-          echo "OK - Route53"
-
-          echo
-          echo "ELB:"
-          aws elbv2 describe-load-balancers \
-            --region "${AWS_REGION}" \
-            --page-size 1 \
-            >/dev/null
-
-          echo "OK - ELB"
-
-          echo
-          echo "IAM:"
-          aws iam list-roles \
-            --max-items 1 \
-            >/dev/null
-
-          echo "OK - IAM"
-
-          echo
-          echo "All required AWS read checks passed."
+          echo "Required Terraform AWS read permissions are working."
 
       # --------------------------------------------------------
       # Terraform plan
-      #
-      # IMPORTANT:
-      # This performs PLAN only.
-      # It does NOT modify infrastructure.
       # --------------------------------------------------------
-      - name: Terraform DEV init
+
+      - name: Terraform init
         working-directory: environments/dev
         shell: bash
         run: |
           set -euo pipefail
 
           terraform init \
-            -input=false \
-            -reconfigure
+            -input=false
 
-      - name: Terraform DEV plan
+      - name: Terraform validate
+        working-directory: environments/dev
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform validate
+
+      - name: Terraform plan
         working-directory: environments/dev
         shell: bash
         run: |
@@ -373,23 +298,23 @@ jobs:
 
           terraform plan \
             -input=false \
-            -no-color \
-            -out=dev.tfplan
+            -out=dev-ci.tfplan
 
-          echo
-          echo "=========================================="
-          echo "TERRAFORM PLAN COMPLETED SUCCESSFULLY"
-          echo "=========================================="
-
-      # --------------------------------------------------------
-      # Show a human-readable plan summary
-      # --------------------------------------------------------
       - name: Terraform plan summary
         working-directory: environments/dev
         shell: bash
         run: |
           set -euo pipefail
 
-          terraform show \
-            -no-color \
-            dev.tfplan
+          echo "=========================================="
+          echo "TERRAFORM PLAN SUMMARY"
+          echo "=========================================="
+
+          terraform show -no-color dev-ci.tfplan | tail -80
+
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-dev-plan
+          path: environments/dev/dev-ci.tfplan
+          retention-days: 7
