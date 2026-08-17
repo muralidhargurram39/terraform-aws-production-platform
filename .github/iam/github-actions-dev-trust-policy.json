@@ -11,7 +11,7 @@
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:muralidhargurram39/terraform-aws-production-platform:environment:dev"
+          "token.actions.githubusercontent.com:sub": "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:environment:dev"
         }
       }
     }
