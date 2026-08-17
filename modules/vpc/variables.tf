@@ -54,6 +54,12 @@ variable "enable_nat_gateway" {
   default     = true
 }
 
+variable "single_nat_gateway" {
+  description = "When true, create one NAT Gateway and route all private subnets through it. When false, create one NAT Gateway per Availability Zone."
+  type        = bool
+  default     = false
+}
+
 variable "enable_flow_logs" {
   description = "Whether VPC Flow Logs should be enabled."
   type        = bool

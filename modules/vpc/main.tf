@@ -120,24 +120,28 @@ resource "aws_route_table_association" "public" {
 }
 
 resource "aws_eip" "nat" {
-  count = var.enable_nat_gateway ? length(var.availability_zones) : 0
+  count = var.enable_nat_gateway ? (
+    var.single_nat_gateway ? 1 : length(var.availability_zones)
+  ) : 0
 
   domain = "vpc"
 
   tags = merge(
     local.common_tags,
     {
-      Name = "${var.name}-nat-eip-${var.availability_zones[count.index]}"
+      Name = var.single_nat_gateway ? "${var.name}-nat-eip" : "${var.name}-nat-eip-${var.availability_zones[count.index]}"
     }
   )
 }
 
 resource "aws_nat_gateway" "this" {
-  count = var.enable_nat_gateway ? length(var.availability_zones) : 0
+  count = var.enable_nat_gateway ? (
+    var.single_nat_gateway ? 1 : length(var.availability_zones)
+  ) : 0
 
   allocation_id = aws_eip.nat[count.index].id
 
-  subnet_id = aws_subnet.public[count.index].id
+  subnet_id = var.single_nat_gateway ? aws_subnet.public[0].id : aws_subnet.public[count.index].id
 
   depends_on = [
     aws_internet_gateway.this
@@ -146,7 +150,7 @@ resource "aws_nat_gateway" "this" {
   tags = merge(
     local.common_tags,
     {
-      Name = "${var.name}-nat-${var.availability_zones[count.index]}"
+      Name = var.single_nat_gateway ? "${var.name}-nat" : "${var.name}-nat-${var.availability_zones[count.index]}"
     }
   )
 }
@@ -172,7 +176,7 @@ resource "aws_route" "private_nat" {
 
   destination_cidr_block = "0.0.0.0/0"
 
-  nat_gateway_id = aws_nat_gateway.this[count.index].id
+  nat_gateway_id = var.single_nat_gateway ? aws_nat_gateway.this[0].id : aws_nat_gateway.this[count.index].id
 }
 
 resource "aws_route_table_association" "private" {

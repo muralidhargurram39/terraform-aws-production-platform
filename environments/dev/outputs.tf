@@ -82,3 +82,23 @@ output "access_analyzer_arn" {
   description = "Dev IAM Access Analyzer ARN."
   value       = module.iam.access_analyzer_arn
 }
+
+output "alb_dns_name" {
+  description = "Development Application Load Balancer DNS name."
+  value       = module.compute.alb_dns_name
+}
+
+output "alb_arn" {
+  description = "Development Application Load Balancer ARN."
+  value       = module.compute.alb_arn
+}
+
+output "target_group_arn" {
+  description = "Development application target group ARN."
+  value       = module.compute.target_group_arn
+}
+
+output "autoscaling_group_name" {
+  description = "Development application Auto Scaling Group name."
+  value       = module.compute.autoscaling_group_name
+}
