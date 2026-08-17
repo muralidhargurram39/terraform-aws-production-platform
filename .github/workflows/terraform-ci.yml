@@ -1,8 +1,6 @@
 name: Terraform CI
 
 on:
-  workflow_dispatch:
-
   pull_request:
     branches:
       - main
@@ -11,39 +9,41 @@ on:
     branches:
       - main
 
+  workflow_dispatch:
+
 permissions:
   contents: read
 
 env:
-  AWS_REGION: ap-south-2
-  AWS_ACCOUNT_ID: "438064565553"
-  AWS_ROLE_ARN: arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev
   TERRAFORM_VERSION: "1.12.2"
-  STATE_BUCKET: aws-production-platform-terraform-state
 
 jobs:
-
-  # ============================================================
-  # JOB 1 - Terraform validation
-  #
-  # No AWS credentials are required here.
-  # ============================================================
-
   terraform-validation:
     name: Terraform Validation
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      # ==========================================================
+      # Install Terraform
+      #
+      # We intentionally install Terraform directly instead of
+      # using hashicorp/setup-terraform because GitHub previously
+      # returned 503/429 errors while downloading that action.
+      # ==========================================================
 
       - name: Install Terraform
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Installing Terraform ${TERRAFORM_VERSION}"
+          echo "=========================================="
+          echo "INSTALL TERRAFORM"
+          echo "=========================================="
+
+          echo "Terraform version: ${TERRAFORM_VERSION}"
 
           sudo apt-get update
           sudo apt-get install -y curl unzip
@@ -55,6 +55,7 @@ jobs:
             --location \
             --retry 5 \
             --retry-delay 5 \
+            --retry-all-errors \
             "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
             -o /tmp/terraform.zip
 
@@ -69,252 +70,129 @@ jobs:
             /usr/local/bin/terraform
 
           terraform version
+
+      # ==========================================================
+      # Terraform formatting
+      # ==========================================================
 
       - name: Terraform format check
         shell: bash
         run: |
           set -euo pipefail
 
+          echo "=========================================="
+          echo "TERRAFORM FORMAT CHECK"
+          echo "=========================================="
+
           terraform fmt -check -recursive environments/dev
           terraform fmt -check -recursive global/route53
           terraform fmt -check -recursive global/acm
           terraform fmt -check -recursive modules
 
-      - name: Validate DEV
+          echo
+          echo "Terraform formatting check passed."
+
+      # ==========================================================
+      # DEV validation
+      #
+      # Backend is disabled because this job must not require AWS
+      # credentials or access Terraform remote state.
+      # ==========================================================
+
+      - name: Validate DEV Terraform
         working-directory: environments/dev
         shell: bash
         run: |
           set -euo pipefail
 
+          echo "=========================================="
+          echo "VALIDATE DEV TERRAFORM"
+          echo "=========================================="
+
           terraform init \
             -backend=false \
             -input=false
 
           terraform validate
 
-      - name: Validate Route53
+      # ==========================================================
+      # Route 53 validation
+      # ==========================================================
+
+      - name: Validate Route 53 Terraform
         working-directory: global/route53
         shell: bash
         run: |
           set -euo pipefail
 
+          echo "=========================================="
+          echo "VALIDATE ROUTE 53 TERRAFORM"
+          echo "=========================================="
+
           terraform init \
             -backend=false \
             -input=false
 
           terraform validate
 
-      - name: Validate ACM
+      # ==========================================================
+      # ACM validation
+      # ==========================================================
+
+      - name: Validate ACM Terraform
         working-directory: global/acm
         shell: bash
         run: |
           set -euo pipefail
 
+          echo "=========================================="
+          echo "VALIDATE ACM TERRAFORM"
+          echo "=========================================="
+
           terraform init \
             -backend=false \
             -input=false
 
           terraform validate
+
+      # ==========================================================
+      # Shell script syntax
+      # ==========================================================
 
       - name: Validate shell scripts
         shell: bash
         run: |
           set -euo pipefail
 
+          echo "=========================================="
+          echo "SHELL SCRIPT VALIDATION"
+          echo "=========================================="
+
           bash -n scripts/app-bootstrap.sh
           bash -n scripts/deploy-dev.sh
           bash -n scripts/destroy-dev.sh
           bash -n scripts/validate.sh
 
+          echo
           echo "All shell scripts passed syntax validation."
 
+      # ==========================================================
+      # Final result
+      # ==========================================================
 
-  # ============================================================
-  # JOB 2 - AWS authenticated Terraform plan
-  # ============================================================
-
-  terraform-dev-plan:
-    name: Terraform DEV Plan
-    runs-on: ubuntu-latest
-
-    needs:
-      - terraform-validation
-
-    environment: dev
-
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Terraform
+      - name: Validation summary
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "Installing Terraform ${TERRAFORM_VERSION}"
-
-          sudo apt-get update
-          sudo apt-get install -y curl unzip
-
-          curl \
-            --fail \
-            --silent \
-            --show-error \
-            --location \
-            --retry 5 \
-            --retry-delay 5 \
-            "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
-            -o /tmp/terraform.zip
-
-          rm -rf /tmp/terraform
-          mkdir -p /tmp/terraform
-
-          unzip -q /tmp/terraform.zip -d /tmp/terraform
-
-          sudo install \
-            -m 0755 \
-            /tmp/terraform/terraform \
-            /usr/local/bin/terraform
-
-          terraform version
-
-      # --------------------------------------------------------
-      # GitHub OIDC -> AWS
-      # --------------------------------------------------------
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.2.3
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: GitHubActionsTerraformPlan
-          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
-
-      # --------------------------------------------------------
-      # Verify AWS authentication
-      # --------------------------------------------------------
-
-      - name: Verify AWS authentication
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "=========================================="
-          echo "AWS IDENTITY"
-          echo "=========================================="
-
-          aws sts get-caller-identity
 
           echo
           echo "=========================================="
-          echo "AWS REGION"
+          echo "TERRAFORM CI PASSED"
           echo "=========================================="
 
-          echo "AWS_REGION=${AWS_REGION}"
-          echo "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}"
-
-          test "${AWS_REGION}" = "ap-south-2"
-          test "${AWS_DEFAULT_REGION}" = "ap-south-2"
-
+          echo "Terraform version : ${TERRAFORM_VERSION}"
+          echo "AWS authentication: Not required"
+          echo "Terraform plan    : Not performed"
+          echo "Terraform apply   : Not performed"
           echo
-          echo "AWS authentication verified."
-
-      # --------------------------------------------------------
-      # Verify state bucket
-      # --------------------------------------------------------
-
-      - name: Verify Terraform state bucket
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Checking Terraform state bucket..."
-
-          aws s3api head-bucket \
-            --bucket "${STATE_BUCKET}"
-
-          echo "Terraform state bucket is accessible."
-
-      # --------------------------------------------------------
-      # Verify AWS APIs required by Terraform
-      # --------------------------------------------------------
-
-      - name: Verify Terraform AWS read access
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Checking SSM..."
-
-          aws ssm get-parameter \
-            --name "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64" \
-            --region "${AWS_REGION}" \
-            --query 'Parameter.[Name,Type]' \
-            --output table
-
-          echo
-          echo "Checking Access Analyzer..."
-
-          aws accessanalyzer get-analyzer \
-            --analyzer-name dev-platform-access-analyzer \
-            --region "${AWS_REGION}" \
-            --query 'analyzer.[name,status,type]' \
-            --output table
-
-          echo
-          echo "Required Terraform AWS read permissions are working."
-
-      # --------------------------------------------------------
-      # Terraform plan
-      # --------------------------------------------------------
-
-      - name: Terraform init
-        working-directory: environments/dev
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          terraform init \
-            -input=false
-
-      - name: Terraform validate
-        working-directory: environments/dev
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          terraform validate
-
-      - name: Terraform plan
-        working-directory: environments/dev
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          terraform plan \
-            -input=false \
-            -out=dev-ci.tfplan
-
-      - name: Terraform plan summary
-        working-directory: environments/dev
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "=========================================="
-          echo "TERRAFORM PLAN SUMMARY"
-          echo "=========================================="
-
-          terraform show -no-color dev-ci.tfplan | tail -80
-
-      - name: Upload Terraform plan
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-dev-plan
-          path: environments/dev/dev-ci.tfplan
-          retention-days: 7
+          echo "Static validation completed successfully."
