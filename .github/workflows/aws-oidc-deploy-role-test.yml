@@ -118,5 +118,5 @@ jobs:
           aws accessanalyzer get-analyzer \
             --region ap-south-2 \
             --analyzer-name dev-platform-access-analyzer \
-            --query '[analyzerName,status,type]' \
+            --query 'analyzerName.[name,status,type]' \
             --output table
