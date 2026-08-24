@@ -66,6 +66,7 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
               "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:pull_request",
               "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:environment:terraform-ci"
             ]
+
           }
         }
       }
