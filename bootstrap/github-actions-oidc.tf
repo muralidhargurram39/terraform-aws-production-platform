@@ -24,8 +24,17 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 }
 
 # ==================================================
-# Terraform CI Role
-# Feature branches, Pull Requests and CI environment
+# GitHub Actions Terraform CI Role
+#
+# Used for:
+# - terraform init
+# - terraform validate
+# - terraform plan
+#
+# Allowed from:
+# - feature branches
+# - pull requests
+# - terraform-ci GitHub environment
 # ==================================================
 
 resource "aws_iam_role" "github_actions_terraform_ci" {
@@ -46,15 +55,16 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
         Action = "sts:AssumeRoleWithWebIdentity"
 
         Condition = {
+
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
 
           StringLike = {
             "token.actions.githubusercontent.com:sub" = [
-              "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:ref:refs/heads/feature/*",
-              "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:pull_request",
-              "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:environment:terraform-ci"
+              "repo:muralidhargurram39/terraform-aws-production-platform:ref:refs/heads/feature/*",
+              "repo:muralidhargurram39/terraform-aws-production-platform:pull_request",
+              "repo:muralidhargurram39/terraform-aws-production-platform:environment:terraform-ci"
             ]
           }
         }
@@ -71,8 +81,13 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
 }
 
 # ==================================================
-# Terraform CI Policy
-# Read-only access to Terraform remote state
+# GitHub Actions Terraform CI Policy
+#
+# Purpose:
+# - Read Terraform remote state
+# - Manage Terraform state lock
+# - Read KMS-encrypted state
+# - Perform AWS discovery required for terraform plan
 # ==================================================
 
 resource "aws_iam_policy" "github_actions_terraform_ci" {
@@ -84,9 +99,9 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
 
     Statement = [
 
-      # ------------------------------------------
-      # List Terraform state bucket
-      # ------------------------------------------
+      # ----------------------------------------------
+      # S3 Terraform State Bucket
+      # ----------------------------------------------
 
       {
         Sid    = "TerraformStateList"
@@ -96,12 +111,12 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "s3:ListBucket"
         ]
 
-        Resource = aws_s3_bucket.terraform_state.arn
+        Resource = "arn:aws:s3:::aws-production-platform-terraform-state"
       },
 
-      # ------------------------------------------
-      # Read Terraform state
-      # ------------------------------------------
+      # ----------------------------------------------
+      # Read Terraform State Files
+      # ----------------------------------------------
 
       {
         Sid    = "TerraformStateRead"
@@ -113,18 +128,24 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
         ]
 
         Resource = [
-          "${aws_s3_bucket.terraform_state.arn}/environments/dev/terraform.tfstate"
+
+          # Dev environment state
+          "arn:aws:s3:::aws-production-platform-terraform-state/environments/dev/terraform.tfstate",
+
+          # Global ACM state
+          "arn:aws:s3:::aws-production-platform-terraform-state/global/acm/terraform.tfstate",
+
+          # Global Route53 state
+          "arn:aws:s3:::aws-production-platform-terraform-state/global/route53/terraform.tfstate"
         ]
       },
 
-      # ------------------------------------------
-      # Terraform state lock
-      # CI needs temporary access to create and
-      # remove the Terraform lock file.
-      # ------------------------------------------
+      # ----------------------------------------------
+      # Terraform State Locks
+      # ----------------------------------------------
 
       {
-        Sid    = "TerraformStateLock"
+        Sid    = "TerraformStateLocks"
         Effect = "Allow"
 
         Action = [
@@ -134,13 +155,23 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
         ]
 
         Resource = [
-          "${aws_s3_bucket.terraform_state.arn}/environments/dev/terraform.tfstate.tflock"
+
+          # Dev environment lock
+          "arn:aws:s3:::aws-production-platform-terraform-state/environments/dev/terraform.tfstate.tflock",
+
+          # ACM lock
+          "arn:aws:s3:::aws-production-platform-terraform-state/global/acm/terraform.tfstate.tflock",
+
+          # Route53 lock
+          "arn:aws:s3:::aws-production-platform-terraform-state/global/route53/terraform.tfstate.tflock"
         ]
       },
 
-      # ------------------------------------------
-      # Read Terraform state encryption key
-      # ------------------------------------------
+      # ----------------------------------------------
+      # KMS Access
+      #
+      # Required to read encrypted Terraform state
+      # ----------------------------------------------
 
       {
         Sid    = "TerraformStateKMS"
@@ -151,12 +182,56 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "kms:DescribeKey"
         ]
 
-        Resource = aws_kms_key.terraform_state.arn
+        Resource = "arn:aws:kms:ap-south-2:438064565553:key/97382776-c7ee-472f-bbca-868451905c6f"
       },
 
-      # ------------------------------------------
-      # Verify AWS identity
-      # ------------------------------------------
+      # ----------------------------------------------
+      # EC2 Read / Discovery
+      #
+      # Required for Terraform data sources and plan
+      # ----------------------------------------------
+
+      {
+        Sid    = "EC2Discovery"
+        Effect = "Allow"
+
+        Action = [
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeImages",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInternetGateways",
+          "ec2:DescribeNatGateways",
+          "ec2:DescribeAddresses",
+          "ec2:DescribeTags"
+        ]
+
+        Resource = "*"
+      },
+
+      # ----------------------------------------------
+      # AWS SSM Public Parameters
+      #
+      # Required for Amazon Linux AMI lookup
+      # ----------------------------------------------
+
+      {
+        Sid    = "SSMParameterRead"
+        Effect = "Allow"
+
+        Action = [
+          "ssm:GetParameter"
+        ]
+
+        Resource = "*"
+      },
+
+      # ----------------------------------------------
+      # AWS Caller Identity
+      # ----------------------------------------------
 
       {
         Sid    = "CallerIdentity"
@@ -179,7 +254,6 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
   }
 }
 
-
 # ==================================================
 # Attach CI Policy to CI Role
 # ==================================================
@@ -189,6 +263,12 @@ resource "aws_iam_role_policy_attachment" "github_actions_terraform_ci" {
   policy_arn = aws_iam_policy.github_actions_terraform_ci.arn
 }
 
+# ==================================================
+# GitHub Actions Terraform Dev Apply Role
+#
+# Used only by the GitHub "dev" environment
+# ==================================================
+
 resource "aws_iam_role" "github_actions_terraform_dev_apply" {
   name = "GitHubActions-Terraform-Dev-Apply"
 
@@ -197,6 +277,7 @@ resource "aws_iam_role" "github_actions_terraform_dev_apply" {
 
     Statement = [
       {
+        Sid    = "GitHubActionsOIDC"
         Effect = "Allow"
 
         Principal = {
