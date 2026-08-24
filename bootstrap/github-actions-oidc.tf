@@ -62,10 +62,11 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
 
           StringLike = {
             "token.actions.githubusercontent.com:sub" = [
-              "repo:muralidhargurram39/terraform-aws-production-platform:ref:refs/heads/feature/*",
-              "repo:muralidhargurram39/terraform-aws-production-platform:pull_request",
-              "repo:muralidhargurram39/terraform-aws-production-platform:environment:terraform-ci"
+              "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:ref:refs/heads/feature/*",
+              "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:pull_request",
+              "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:environment:terraform-ci"
             ]
+
           }
         }
       }
