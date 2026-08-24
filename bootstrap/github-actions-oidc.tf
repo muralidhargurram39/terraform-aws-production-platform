@@ -25,7 +25,7 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 
 # ==================================================
 # Terraform CI Role
-# Feature branches and Pull Requests
+# Feature branches, Pull Requests and CI environment
 # ==================================================
 
 resource "aws_iam_role" "github_actions_terraform_ci" {
@@ -36,6 +36,7 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
 
     Statement = [
       {
+        Sid    = "GitHubActionsOIDC"
         Effect = "Allow"
 
         Principal = {
@@ -50,7 +51,11 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
           }
 
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:muralidhargurram39/terraform-aws-production-platform:*"
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:${var.github_organization}/${var.github_repository}:ref:refs/heads/feature/*",
+              "repo:${var.github_organization}/${var.github_repository}:pull_request",
+              "repo:${var.github_organization}/${var.github_repository}:environment:terraform-ci"
+            ]
           }
         }
       }
