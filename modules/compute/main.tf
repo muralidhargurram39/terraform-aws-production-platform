@@ -35,7 +35,7 @@ resource "aws_launch_template" "app" {
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 2
+    http_put_response_hop_limit = 1
     instance_metadata_tags      = "disabled"
   }
 
@@ -87,8 +87,8 @@ resource "aws_launch_template" "app" {
     }
   )
 }
-
 resource "aws_lb" "app" {
+  #checkov:skip=CKV2_AWS_76:AWSManagedRulesKnownBadInputsRuleSet is enabled on the associated WAFv2 Web ACL and provides Log4j/Log4JRCE protection.
   name               = "${var.name}-alb"
   internal           = false
   load_balancer_type = "application"
@@ -100,8 +100,18 @@ resource "aws_lb" "app" {
   subnets = var.public_subnet_ids
 
   enable_deletion_protection = var.enable_deletion_protection
+  drop_invalid_header_fields = true
 
   enable_http2 = true
+
+  dynamic "access_logs" {
+    for_each = var.enable_access_logs ? [1] : []
+
+    content {
+      bucket  = aws_s3_bucket.alb_logs[0].id
+      enabled = true
+    }
+  }
 
   tags = merge(
     local.common_tags,

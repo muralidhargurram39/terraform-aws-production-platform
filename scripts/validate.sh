@@ -16,7 +16,6 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AWS_REGION="ap-south-2"
 DOMAIN_NAME="dev.muralidharops.com"
 ROOT_DOMAIN="muralidharops.com"
-STATE_BUCKET="aws-production-platform-terraform-state"
 
 DEV_DIR="${PROJECT_ROOT}/environments/dev"
 ROUTE53_DIR="${PROJECT_ROOT}/global/route53"
@@ -319,6 +318,9 @@ aws elbv2 describe-target-health \
     'TargetHealthDescriptions[].{Target:Target.Id,Port:Target.Port,State:TargetHealth.State}' \
   --output table
 
+# JMESPath expression intentionally uses single quotes so Bash
+# passes the query literally to AWS CLI.
+# shellcheck disable=SC2016
 UNHEALTHY_TARGETS="$(
   aws elbv2 describe-target-health \
     --region "${AWS_REGION}" \

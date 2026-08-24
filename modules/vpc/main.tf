@@ -8,6 +8,7 @@ locals {
 }
 
 resource "aws_vpc" "this" {
+  #checkov:skip=CKV2_AWS_11:VPC Flow Logs are enabled by the security module and attached to this VPC through var.vpc_id.
   cidr_block = var.vpc_cidr
 
   enable_dns_support   = true
@@ -41,7 +42,7 @@ resource "aws_subnet" "public" {
 
   availability_zone = var.availability_zones[count.index]
 
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false
 
   tags = merge(
     local.common_tags,
@@ -209,4 +210,17 @@ resource "aws_route_table_association" "isolated" {
   route_table_id = aws_route_table.isolated[count.index].id
 }
 
+resource "aws_default_security_group" "this" {
+  vpc_id = aws_vpc.this.id
 
+  ingress = []
+  egress  = []
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "${var.name}-default-sg"
+      Tier = "default"
+    }
+  )
+}

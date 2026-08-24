@@ -8,6 +8,7 @@ locals {
 }
 
 resource "aws_security_group" "alb" {
+  #checkov:skip=CKV2_AWS_5:Security group is attached to the ALB in the compute module via module output.
   name        = "${var.name}-alb-sg"
   description = "Security group for the Application Load Balancer."
   vpc_id      = var.vpc_id
@@ -22,6 +23,7 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+  #checkov:skip=CKV_AWS_260:HTTP port 80 is intentionally exposed only for the ALB HTTP-to-HTTPS 301 redirect; application traffic is served through HTTPS.
   for_each = toset(var.allowed_http_cidr_blocks)
 
   security_group_id = aws_security_group.alb.id
@@ -57,6 +59,7 @@ resource "aws_vpc_security_group_egress_rule" "alb_all" {
 }
 
 resource "aws_security_group" "app" {
+  #checkov:skip=CKV2_AWS_5:Security group is attached to EC2 instances through the compute module Launch Template.
   name        = "${var.name}-app-sg"
   description = "Security group for application workloads."
   vpc_id      = var.vpc_id
@@ -92,6 +95,7 @@ resource "aws_vpc_security_group_egress_rule" "app_all" {
 }
 
 resource "aws_security_group" "db" {
+  #checkov:skip=CKV2_AWS_5:Reserved for the database tier, which is not yet implemented in this infrastructure stage.
   name        = "${var.name}-db-sg"
   description = "Security group for database workloads."
   vpc_id      = var.vpc_id
@@ -126,11 +130,85 @@ resource "aws_vpc_security_group_egress_rule" "db_all" {
   description = "Allow database outbound traffic."
 }
 
+data "aws_caller_identity" "current" {}
+
+data "aws_region" "current" {}
+
+resource "aws_kms_key" "vpc_flow_logs" {
+  count = var.enable_flow_logs ? 1 : 0
+
+  description             = "KMS key for VPC Flow Logs CloudWatch log group."
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Sid    = "EnableAccountAdministration"
+        Effect = "Allow"
+
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowCloudWatchLogsUseOfKey"
+        Effect = "Allow"
+
+        Principal = {
+          Service = "logs.${data.aws_region.current.region}.amazonaws.com"
+        }
+
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey"
+        ]
+
+        Resource = "*"
+
+        Condition = {
+          ArnEquals = {
+            "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/vpc/${var.name}/flow-logs"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "${var.name}-vpc-flow-logs-kms"
+    }
+  )
+}
+
+resource "aws_kms_alias" "vpc_flow_logs" {
+  count = var.enable_flow_logs ? 1 : 0
+
+  name          = "alias/${var.name}-vpc-flow-logs"
+  target_key_id = aws_kms_key.vpc_flow_logs[0].key_id
+}
+
 resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
   count = var.enable_flow_logs ? 1 : 0
 
   name              = "/aws/vpc/${var.name}/flow-logs"
   retention_in_days = var.flow_log_retention_days
+
+  kms_key_id = aws_kms_key.vpc_flow_logs[0].arn
 
   tags = merge(
     local.common_tags,
@@ -139,10 +217,6 @@ resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
     }
   )
 }
-
-data "aws_caller_identity" "current" {}
-
-data "aws_region" "current" {}
 
 resource "aws_iam_role" "flow_logs" {
   count = var.enable_flow_logs ? 1 : 0
@@ -194,17 +268,34 @@ resource "aws_iam_role_policy" "flow_logs" {
 
     Statement = [
       {
+        Sid    = "AllowCreateLogStream"
         Effect = "Allow"
 
         Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents",
-          "logs:DescribeLogGroups",
+          "logs:CreateLogStream"
+        ]
+
+        Resource = "${aws_cloudwatch_log_group.vpc_flow_logs[0].arn}:*"
+      },
+      {
+        Sid    = "AllowPutLogEvents"
+        Effect = "Allow"
+
+        Action = [
+          "logs:PutLogEvents"
+        ]
+
+        Resource = "${aws_cloudwatch_log_group.vpc_flow_logs[0].arn}:*"
+      },
+      {
+        Sid    = "AllowDescribeLogStreams"
+        Effect = "Allow"
+
+        Action = [
           "logs:DescribeLogStreams"
         ]
 
-        Resource = "*"
+        Resource = aws_cloudwatch_log_group.vpc_flow_logs[0].arn
       }
     ]
   })

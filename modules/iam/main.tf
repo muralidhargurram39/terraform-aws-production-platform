@@ -28,18 +28,13 @@ data "aws_iam_policy_document" "ec2_assume_role" {
 }
 
 data "aws_iam_policy_document" "ec2_boundary" {
+  #checkov:skip=CKV_AWS_111:SSM, SSMMessages, and EC2Messages control-plane actions require Resource "*" and are constrained by the EC2 role permissions boundary.
+  #checkov:skip=CKV_AWS_108:The EC2 permissions boundary contains only SSM control-plane permissions and does not grant application data-access permissions.
+  #checkov:skip=CKV_AWS_356:SSM, SSMMessages, and EC2Messages actions in the AWS-managed AmazonSSMManagedInstanceCore policy use Resource "*" where resource-level restriction is not applicable.
   statement {
     effect = "Allow"
 
     actions = [
-      "ec2:Describe*",
-      "autoscaling:Describe*",
-      "elasticloadbalancing:Describe*",
-
-      "cloudwatch:GetMetricData",
-      "cloudwatch:GetMetricStatistics",
-      "cloudwatch:ListMetrics",
-
       "ssm:DescribeAssociation",
       "ssm:GetDeployablePatchSnapshotForInstance",
       "ssm:GetDocument",
@@ -47,8 +42,13 @@ data "aws_iam_policy_document" "ec2_boundary" {
       "ssm:GetManifest",
       "ssm:GetParameter",
       "ssm:GetParameters",
-      "ssm:GetParametersByPath",
+      "ssm:ListAssociations",
+      "ssm:ListInstanceAssociations",
+      "ssm:PutInventory",
+      "ssm:PutComplianceItems",
       "ssm:PutConfigurePackageResult",
+      "ssm:UpdateAssociationStatus",
+      "ssm:UpdateInstanceAssociationStatus",
       "ssm:UpdateInstanceInformation",
 
       "ssmmessages:CreateControlChannel",

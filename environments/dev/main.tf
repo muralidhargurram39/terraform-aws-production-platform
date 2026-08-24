@@ -27,16 +27,6 @@ data "terraform_remote_state" "acm" {
   }
 }
 
-data "terraform_remote_state" "route53" {
-  backend = "s3"
-
-  config = {
-    bucket = "aws-production-platform-terraform-state"
-    key    = "global/route53/terraform.tfstate"
-    region = "ap-south-2"
-  }
-}
-
 module "vpc" {
   source = "../../modules/vpc"
 
@@ -91,7 +81,7 @@ module "security" {
 
   enable_flow_logs = true
 
-  flow_log_retention_days = 30
+  flow_log_retention_days = 365
 
   tags = local.common_tags
 }
@@ -116,12 +106,10 @@ module "compute" {
 
   vpc_id = module.vpc.vpc_id
 
-  public_subnet_ids = module.vpc.public_subnet_ids
-
+  public_subnet_ids  = module.vpc.public_subnet_ids
   private_subnet_ids = module.vpc.private_subnet_ids
 
   alb_security_group_id = module.security.alb_security_group_id
-
   app_security_group_id = module.security.app_security_group_id
 
   ec2_instance_profile_name = module.iam.ec2_instance_profile_name
@@ -134,13 +122,19 @@ module "compute" {
   desired_capacity = 2
   max_size         = 6
 
-  application_port = 8080
-
+  application_port  = 8080
   health_check_path = "/health"
 
   cpu_target_value = 60
 
   user_data = file("${path.root}/../../scripts/app-bootstrap.sh")
+
+  enable_access_logs = true
+  enable_waf         = true
+
+  alb_log_retention_days = 365
+
+  enable_deletion_protection = true
 
   tags = local.common_tags
 }

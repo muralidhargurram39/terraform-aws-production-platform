@@ -130,3 +130,26 @@ variable "certificate_arn" {
   description = "ARN of the ACM certificate used by the HTTPS ALB listener."
   type        = string
 }
+
+variable "enable_access_logs" {
+  description = "Enable ALB access logging to a dedicated S3 bucket."
+  type        = bool
+  default     = false
+}
+
+variable "enable_waf" {
+  description = "Enable AWS WAF protection for the Application Load Balancer."
+  type        = bool
+  default     = false
+}
+
+variable "alb_log_retention_days" {
+  description = "Number of days to retain ALB access logs."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.alb_log_retention_days >= 1
+    error_message = "ALB log retention must be at least 1 day."
+  }
+}
