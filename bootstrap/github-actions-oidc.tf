@@ -70,6 +70,104 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
   }
 }
 
+# ==================================================
+# Terraform CI Policy
+# Read-only access to Terraform remote state
+# ==================================================
+
+resource "aws_iam_policy" "github_actions_terraform_ci" {
+  name        = "GitHubActions-Terraform-CI"
+  description = "Read-only access required by GitHub Actions Terraform CI"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+
+      # ------------------------------------------
+      # List Terraform state bucket
+      # ------------------------------------------
+
+      {
+        Sid    = "TerraformStateList"
+        Effect = "Allow"
+
+        Action = [
+          "s3:ListBucket"
+        ]
+
+        Resource = aws_s3_bucket.terraform_state.arn
+      },
+
+      # ------------------------------------------
+      # Read Terraform state
+      # ------------------------------------------
+
+      {
+        Sid    = "TerraformStateRead"
+        Effect = "Allow"
+
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion"
+        ]
+
+        Resource = [
+          "${aws_s3_bucket.terraform_state.arn}/environments/dev/terraform.tfstate"
+        ]
+      },
+
+      # ------------------------------------------
+      # Read Terraform state encryption key
+      # ------------------------------------------
+
+      {
+        Sid    = "TerraformStateKMS"
+        Effect = "Allow"
+
+        Action = [
+          "kms:Decrypt",
+          "kms:DescribeKey"
+        ]
+
+        Resource = aws_kms_key.terraform_state.arn
+      },
+
+      # ------------------------------------------
+      # Verify AWS identity
+      # ------------------------------------------
+
+      {
+        Sid    = "CallerIdentity"
+        Effect = "Allow"
+
+        Action = [
+          "sts:GetCallerIdentity"
+        ]
+
+        Resource = "*"
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "GitHubActions-Terraform-CI"
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+    Environment = "ci"
+  }
+}
+
+
+# ==================================================
+# Attach CI Policy to CI Role
+# ==================================================
+
+resource "aws_iam_role_policy_attachment" "github_actions_terraform_ci" {
+  role       = aws_iam_role.github_actions_terraform_ci.name
+  policy_arn = aws_iam_policy.github_actions_terraform_ci.arn
+}
+
 resource "aws_iam_role" "github_actions_terraform_dev_apply" {
   name = "GitHubActions-Terraform-Dev-Apply"
 
