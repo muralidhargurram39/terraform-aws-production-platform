@@ -91,6 +91,8 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
 # ==================================================
 
 resource "aws_iam_policy" "github_actions_terraform_ci" {
+  #checkov:skip=CKV_AWS_355:Some AWS read-only discovery APIs require Resource "*"
+  #checkov:skip=CKV_AWS_288:Policy contains only Terraform state access and read-only discovery permissions
   name        = "GitHubActions-Terraform-CI"
   description = "Read-only access required by GitHub Actions Terraform CI"
 
@@ -226,7 +228,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "ssm:GetParameter"
         ]
 
-        Resource = "*"
+        Resource = "arn:aws:ssm:ap-south-2::parameter/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
       },
 
       # ----------------------------------------------
