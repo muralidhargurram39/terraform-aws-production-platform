@@ -35,6 +35,7 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 # - feature branches
 # - pull requests
 # - terraform-ci GitHub environment
+# Feature branches, Pull Requests and CI environment
 # ==================================================
 
 resource "aws_iam_role" "github_actions_terraform_ci" {
@@ -55,7 +56,6 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
         Action = "sts:AssumeRoleWithWebIdentity"
 
         Condition = {
-
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
