@@ -118,6 +118,27 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
       },
 
       # ------------------------------------------
+      # Terraform state lock
+      # CI needs temporary access to create and
+      # remove the Terraform lock file.
+      # ------------------------------------------
+
+      {
+        Sid    = "TerraformStateLock"
+        Effect = "Allow"
+
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+
+        Resource = [
+          "${aws_s3_bucket.terraform_state.arn}/environments/dev/terraform.tfstate.tflock"
+        ]
+      },
+
+      # ------------------------------------------
       # Read Terraform state encryption key
       # ------------------------------------------
 
