@@ -63,6 +63,34 @@ jobs:
 
           echo "$PAYLOAD" | base64 --decode | jq .
 
+      - name: Inspect GitHub OIDC claims
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Repository: ${{ github.repository }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref name: ${{ github.ref_name }}"
+
+          RESPONSE="$(curl -sS \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")"
+
+          TOKEN="$(echo "$RESPONSE" | jq -r '.value')"
+
+          PAYLOAD="$(echo "$TOKEN" | cut -d '.' -f2)"
+
+          PAYLOAD="${PAYLOAD//-/+}"
+          PAYLOAD="${PAYLOAD//_/\/}"
+
+          case $((${#PAYLOAD} % 4)) in
+            2) PAYLOAD="${PAYLOAD}==" ;;
+            3) PAYLOAD="${PAYLOAD}=" ;;
+          esac
+
+          echo "$PAYLOAD" | base64 --decode | jq .
+
 
       # ---------------------------------------------
       # Configure AWS using GitHub OIDC
