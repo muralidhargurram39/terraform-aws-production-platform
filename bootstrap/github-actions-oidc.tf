@@ -24,7 +24,6 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 }
 
 # ==================================================
-<<<<<<< HEAD
 # GitHub Actions Terraform CI Role
 #
 # Used for:
@@ -36,10 +35,6 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 # - feature branches
 # - pull requests
 # - terraform-ci GitHub environment
-=======
-# Terraform CI Role
-# Feature branches and Pull Requests
->>>>>>> 8b2fdea (feat: configure GitHub Actions OIDC roles)
 # ==================================================
 
 resource "aws_iam_role" "github_actions_terraform_ci" {
@@ -50,10 +45,7 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
 
     Statement = [
       {
-<<<<<<< HEAD
         Sid    = "GitHubActionsOIDC"
-=======
->>>>>>> 8b2fdea (feat: configure GitHub Actions OIDC roles)
         Effect = "Allow"
 
         Principal = {
@@ -63,27 +55,16 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
         Action = "sts:AssumeRoleWithWebIdentity"
 
         Condition = {
-<<<<<<< HEAD
-
-=======
->>>>>>> 8b2fdea (feat: configure GitHub Actions OIDC roles)
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
 
           StringLike = {
             "token.actions.githubusercontent.com:sub" = [
-<<<<<<< HEAD
-              "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:ref:refs/heads/feature/*",
-              "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:pull_request",
-              "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:environment:terraform-ci"
-            ]
-
-=======
               "repo:${var.github_organization}/${var.github_repository}:ref:refs/heads/feature/*",
-              "repo:${var.github_organization}/${var.github_repository}:pull_request"
+              "repo:${var.github_organization}/${var.github_repository}:pull_request",
+              "repo:${var.github_organization}/${var.github_repository}:environment:terraform-ci"
             ]
->>>>>>> 8b2fdea (feat: configure GitHub Actions OIDC roles)
           }
         }
       }
@@ -98,7 +79,6 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
   }
 }
 
-<<<<<<< HEAD
 # ==================================================
 # GitHub Actions Terraform CI Policy
 #
@@ -290,8 +270,6 @@ resource "aws_iam_role_policy_attachment" "github_actions_terraform_ci" {
 # Used only by the GitHub "dev" environment
 # ==================================================
 
-=======
->>>>>>> 8b2fdea (feat: configure GitHub Actions OIDC roles)
 resource "aws_iam_role" "github_actions_terraform_dev_apply" {
   name = "GitHubActions-Terraform-Dev-Apply"
 
@@ -300,10 +278,7 @@ resource "aws_iam_role" "github_actions_terraform_dev_apply" {
 
     Statement = [
       {
-<<<<<<< HEAD
         Sid    = "GitHubActionsOIDC"
-=======
->>>>>>> 8b2fdea (feat: configure GitHub Actions OIDC roles)
         Effect = "Allow"
 
         Principal = {
