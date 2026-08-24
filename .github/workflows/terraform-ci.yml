@@ -134,9 +134,32 @@ jobs:
           tflint_version: latest
 
       - name: Initialize TFLint
+        shell: bash
         run: |
           set -euo pipefail
-          tflint --init
+
+          MAX_ATTEMPTS=5
+          SLEEP_SECONDS=20
+
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+           echo "========================================"
+           echo "TFLint initialization attempt ${attempt}/${MAX_ATTEMPTS}"
+           echo "========================================"
+
+           if tflint --init; then
+             echo "TFLint initialization successful"
+             exit 0
+           fi
+
+           if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+             echo "TFLint initialization failed."
+             echo "Retrying in ${SLEEP_SECONDS} seconds..."
+             sleep "$SLEEP_SECONDS"
+           fi
+          done
+
+          echo "ERROR: TFLint initialization failed after ${MAX_ATTEMPTS} attempts."
+          exit 1
 
       - name: Run TFLint
         run: |
