@@ -1,184 +1,109 @@
-name: Terraform DEV Apply
+name: Terraform Dev Apply
 
 on:
-  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
 
 permissions:
-  id-token: write
   contents: read
+  id-token: write
 
-concurrency:
-  group: terraform-dev
-  cancel-in-progress: false
+env:
+  TF_WORKING_DIR: environments/dev
+  TF_VERSION: "1.15.8"
+  AWS_REGION: ap-south-2
+  TF_IN_AUTOMATION: "true"
 
 jobs:
   terraform-apply:
-    name: Terraform DEV Apply
+    name: Terraform Apply - Dev
+
+    # Run only when a Pull Request targeting main is actually merged.
+    # A PR that is simply closed will not trigger Terraform apply.
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main'
+
     runs-on: ubuntu-latest
 
-    environment: dev
-
-    env:
-      AWS_REGION: ap-south-2
-      TF_IN_AUTOMATION: "true"
-      TF_INPUT: "false"
+    environment:
+      name: dev
 
     steps:
+      # ----------------------------------------
+      # Checkout merged main branch
+      # ----------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ----------------------------------------
+      # Configure AWS authentication using OIDC
+      # ----------------------------------------
+
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev-Apply
-          aws-region: ap-south-2
-          role-session-name: GitHubActionsTerraformApply
-          allowed-account-ids: 438064565553
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Verify AWS identity
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "=========================================="
-          echo "AWS IDENTITY"
-          echo "=========================================="
-
           aws sts get-caller-identity
 
-          echo
-          echo "AWS_REGION=${AWS_REGION}"
-          echo "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}"
+      # ----------------------------------------
+      # Setup Terraform
+      # ----------------------------------------
 
-      - name: Install Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Verify Terraform version
         shell: bash
         run: |
           set -euo pipefail
+          terraform version
 
-          sudo apt-get update
+      # ----------------------------------------
+      # Initialize Terraform backend
+      # ----------------------------------------
 
-          sudo apt-get install -y \
-            gnupg \
-            software-properties-common \
-            curl \
-            lsb-release
-
-          curl -fsSL https://apt.releases.hashicorp.com/gpg \
-            | gpg --dearmor \
-            | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
-
-          echo \
-            "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
-            | sudo tee /etc/apt/sources.list.d/hashicorp.list
-
-          sudo apt-get update
-          sudo apt-get install -y terraform
-
-      - name: Terraform version
-        run: terraform version
-
-      - name: Terraform init
-        working-directory: environments/dev
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
         shell: bash
         run: |
           set -euo pipefail
+          terraform init -input=false
 
-          terraform init \
-            -input=false
+      # ----------------------------------------
+      # Validate merged configuration
+      # ----------------------------------------
 
-      - name: Terraform validate
-        working-directory: environments/dev
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
         shell: bash
         run: |
           set -euo pipefail
-
           terraform validate
 
-      - name: Terraform plan
-        working-directory: environments/dev
-        shell: bash
-        run: |
-          set -euo pipefail
+      # ----------------------------------------
+      # Apply merged main configuration
+      # ----------------------------------------
 
-          terraform plan \
-            -input=false \
-            -out=dev.tfplan
-
-      - name: Show Terraform plan summary
-        working-directory: environments/dev
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          terraform show \
-            -no-color \
-            dev.tfplan \
-            > dev-plan.txt
-
-          cat dev-plan.txt
-
-      - name: Terraform apply
-        working-directory: environments/dev
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
         shell: bash
         run: |
           set -euo pipefail
 
           terraform apply \
             -input=false \
-            -auto-approve \
-            dev.tfplan
-
-      - name: Verify DEV infrastructure
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "=========================================="
-          echo "DEV ALB"
-          echo "=========================================="
-
-          aws elbv2 describe-load-balancers \
-            --region "${AWS_REGION}" \
-            --query 'LoadBalancers[?LoadBalancerName==`dev-platform-alb`].[LoadBalancerName,State.Code,DNSName]' \
-            --output table
-
-          echo
-          echo "=========================================="
-          echo "DEV TARGET HEALTH"
-          echo "=========================================="
-
-          TARGET_GROUP_ARN="$(cd environments/dev && terraform output -raw target_group_arn)"
-
-          aws elbv2 describe-target-health \
-            --region "${AWS_REGION}" \
-            --target-group-arn "${TARGET_GROUP_ARN}" \
-            --query 'TargetHealthDescriptions[*].[Target.Id,Target.Port,TargetHealth.State]' \
-            --output table
-
-      - name: Verify HTTPS endpoint
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "=========================================="
-          echo "DEV HTTPS HEALTH CHECK"
-          echo "=========================================="
-
-          curl \
-            --fail \
-            --silent \
-            --show-error \
-            --max-time 20 \
-            https://dev.muralidharops.com/health
-
-          echo
-          echo "HTTPS health check passed."
-
-      - name: Upload Terraform plan
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-dev-apply-${{ github.run_number }}
-          path: |
-            environments/dev/dev.tfplan
-            environments/dev/dev-plan.txt
-          retention-days: 7
+            -auto-approve
