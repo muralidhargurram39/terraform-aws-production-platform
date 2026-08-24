@@ -153,6 +153,15 @@ jobs:
           directory: .
           framework: terraform
           quiet: true
+      
+      - name: Debug GitHub OIDC context
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref name: ${{ github.ref_name }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Environment: ${{ github.job }}"
 
       # ----------------------------------------
       # AWS Authentication
