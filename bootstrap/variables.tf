@@ -9,3 +9,15 @@ variable "project_name" {
   type        = string
   default     = "aws-production-platform"
 }
+
+variable "github_organization" {
+  description = "GitHub organization or username that owns the repository."
+  type        = string
+  default     = "muralidhargurram39"
+}
+
+variable "github_repository" {
+  description = "GitHub repository name."
+  type        = string
+  default     = "terraform-aws-production-platform"
+}

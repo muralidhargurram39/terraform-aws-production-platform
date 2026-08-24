@@ -1,0 +1,106 @@
+name: Terraform Apply - Dev
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: terraform-dev-apply
+  cancel-in-progress: false
+
+jobs:
+  terraform-apply:
+    name: Terraform Apply - Dev
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: dev
+
+    defaults:
+      run:
+        working-directory: environments/dev
+
+    steps:
+
+      # ---------------------------------------------
+      # Checkout repository
+      # ---------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ---------------------------------------------
+      # Configure AWS using GitHub OIDC
+      # ---------------------------------------------
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev-Apply
+          aws-region: ap-south-2
+
+
+      # ---------------------------------------------
+      # Verify AWS identity
+      # ---------------------------------------------
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+
+      # ---------------------------------------------
+      # Setup Terraform
+      # ---------------------------------------------
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+
+      # ---------------------------------------------
+      # Terraform Init
+      # ---------------------------------------------
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+
+      # ---------------------------------------------
+      # Terraform Validate
+      # ---------------------------------------------
+
+      - name: Terraform Validate
+        run: terraform validate
+
+
+      # ---------------------------------------------
+      # Terraform Plan
+      #
+      # Generate a fresh plan from main.
+      # We intentionally do NOT reuse the plan
+      # generated on the feature branch.
+      # ---------------------------------------------
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -input=false \
+            -out=tfplan
+
+
+      # ---------------------------------------------
+      # Terraform Apply
+      # ---------------------------------------------
+
+      - name: Terraform Apply
+        run: |
+          terraform apply \
+            -input=false \
+            -auto-approve \
+            tfplan

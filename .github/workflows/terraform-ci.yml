@@ -17,6 +17,7 @@ env:
   TF_VERSION: "1.15.8"
   AWS_REGION: ap-south-2
   TF_IN_AUTOMATION: "true"
+  AWS_ROLE_TO_ASSUME: "arn:aws:iam::438064565553:role/GitHubActions-Terraform-CI"
 
 jobs:
   terraform-ci:
@@ -133,9 +134,32 @@ jobs:
           tflint_version: latest
 
       - name: Initialize TFLint
+        shell: bash
         run: |
           set -euo pipefail
-          tflint --init
+
+          MAX_ATTEMPTS=5
+          SLEEP_SECONDS=20
+
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+           echo "========================================"
+           echo "TFLint initialization attempt ${attempt}/${MAX_ATTEMPTS}"
+           echo "========================================"
+
+           if tflint --init; then
+             echo "TFLint initialization successful"
+             exit 0
+           fi
+
+           if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+             echo "TFLint initialization failed."
+             echo "Retrying in ${SLEEP_SECONDS} seconds..."
+             sleep "$SLEEP_SECONDS"
+           fi
+          done
+
+          echo "ERROR: TFLint initialization failed after ${MAX_ATTEMPTS} attempts."
+          exit 1
 
       - name: Run TFLint
         run: |
@@ -152,6 +176,42 @@ jobs:
           directory: .
           framework: terraform
           quiet: true
+      
+      - name: Debug GitHub OIDC context
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref name: ${{ github.ref_name }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Environment: ${{ github.job }}"
+      
+      # ----------------------------------------
+      # OIDC Token Diagnostics
+      # ----------------------------------------
+
+      - name: Inspect GitHub OIDC claims
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RESPONSE="$(curl -sS \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")"
+
+          TOKEN="$(echo "$RESPONSE" | jq -r '.value')"
+
+          PAYLOAD="$(echo "$TOKEN" | cut -d '.' -f2)"
+
+          PAYLOAD="${PAYLOAD//-/+}"
+          PAYLOAD="${PAYLOAD//_/\/}"
+
+          case $((${#PAYLOAD} % 4)) in
+            2) PAYLOAD="${PAYLOAD}==" ;;
+            3) PAYLOAD="${PAYLOAD}=" ;;
+          esac
+
+          echo "$PAYLOAD" | base64 --decode | jq .
 
       # ----------------------------------------
       # AWS Authentication
@@ -161,7 +221,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Verify AWS identity

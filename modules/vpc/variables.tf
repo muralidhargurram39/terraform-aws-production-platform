@@ -60,12 +60,6 @@ variable "single_nat_gateway" {
   default     = false
 }
 
-variable "enable_flow_logs" {
-  description = "Whether VPC Flow Logs should be enabled."
-  type        = bool
-  default     = false
-}
-
 variable "tags" {
   description = "Additional tags applied to VPC resources."
   type        = map(string)
