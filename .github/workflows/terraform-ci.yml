@@ -10,6 +10,7 @@ on:
       - main
       - "feature/**"
       - "fix/**"
+      - "debug/**"
 
   workflow_dispatch:
 
