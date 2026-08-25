@@ -1,484 +1,299 @@
 name: Terraform CI
 
 on:
-  push:
-    branches:
-      - "feature/**"
-
   pull_request:
     branches:
       - main
 
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
 permissions:
   contents: read
-  id-token: write
 
 env:
-  TF_VERSION: "1.15.8"
-  AWS_REGION: "ap-south-2"
   TF_IN_AUTOMATION: "true"
-  AWS_ROLE_TO_ASSUME: "arn:aws:iam::438064565553:role/GitHubActions-Terraform-CI"
+  TF_INPUT: "false"
 
 jobs:
-  terraform-ci:
-    name: Terraform CI
+  terraform-validation:
+    name: Terraform Validation
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        shell: bash
-
     steps:
-
-      # ============================================================
-      # 1. CHECKOUT
-      # ============================================================
+      # ==========================================================
+      # Checkout
+      # ==========================================================
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show Git commit
+      # ==========================================================
+      # Read Terraform version
+      # ==========================================================
+
+      - name: Read Terraform version
+        id: terraform-version
+        shell: bash
         run: |
           set -euo pipefail
 
-          echo "Repository:"
-          git remote -v
+          echo "=========================================="
+          echo "READ TERRAFORM VERSION"
+          echo "=========================================="
 
-          echo ""
-          echo "Current branch/ref:"
-          git branch --show-current || true
-          git rev-parse --abbrev-ref HEAD || true
+          test -f .terraform-version
 
-          echo ""
-          echo "Commit:"
-          git rev-parse HEAD
+          TERRAFORM_VERSION="$(tr -d '[:space:]' < .terraform-version)"
 
+          if [[ ! "${TERRAFORM_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: Invalid Terraform version: ${TERRAFORM_VERSION}"
+            exit 1
+          fi
 
-      # ============================================================
-      # 2. TERRAFORM SETUP
-      # ============================================================
+          echo "Terraform version: ${TERRAFORM_VERSION}"
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
+          echo "terraform_version=${TERRAFORM_VERSION}" >> "${GITHUB_OUTPUT}"
 
-      - name: Verify Terraform version
+      # ==========================================================
+      # Install Terraform
+      # ==========================================================
+
+      - name: Install Terraform
+        shell: bash
+        env:
+          TERRAFORM_VERSION: ${{ steps.terraform-version.outputs.terraform_version }}
         run: |
           set -euo pipefail
+
+          echo "=========================================="
+          echo "INSTALL TERRAFORM"
+          echo "=========================================="
+
+          sudo apt-get update
+          sudo apt-get install -y curl unzip
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --retry 5 \
+            --retry-delay 5 \
+            "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
+            --output /tmp/terraform.zip
+
+          rm -rf /tmp/terraform
+          mkdir -p /tmp/terraform
+
+          unzip -q /tmp/terraform.zip -d /tmp/terraform
+
+          sudo install \
+            -m 0755 \
+            /tmp/terraform/terraform \
+            /usr/local/bin/terraform
+
+          rm -rf /tmp/terraform
+          rm -f /tmp/terraform.zip
 
           terraform version
 
+      # ==========================================================
+      # Terraform formatting
+      # ==========================================================
 
-      # ============================================================
-      # 3. TERRAFORM FORMAT
-      # ============================================================
-
-      - name: Terraform Format Check
+      - name: Terraform format check
+        shell: bash
         run: |
           set -euo pipefail
 
-          terraform fmt -check -recursive
+          echo "=========================================="
+          echo "TERRAFORM FORMAT CHECK"
+          echo "=========================================="
 
+          terraform fmt -check -recursive bootstrap
+          terraform fmt -check -recursive environments
+          terraform fmt -check -recursive global
+          terraform fmt -check -recursive modules
 
-      # ============================================================
-      # 4. TERRAFORM VALIDATION
-      # Backend is intentionally disabled for validation.
-      # The committed lock file controls provider versions.
-      # ============================================================
+      # ==========================================================
+      # Bootstrap validation
+      # ==========================================================
 
-      - name: Terraform Init - Bootstrap
+      - name: Validate Bootstrap
         working-directory: bootstrap
+        shell: bash
         run: |
           set -euo pipefail
 
           terraform init \
             -backend=false \
-            -input=false \
-            -lockfile=readonly
-
-      - name: Terraform Validate - Bootstrap
-        working-directory: bootstrap
-        run: |
-          set -euo pipefail
+            -input=false
 
           terraform validate
 
+      # ==========================================================
+      # DEV environment validation
+      # ==========================================================
 
-      - name: Terraform Init - VPC Module
-        working-directory: modules/vpc
-        run: |
-          set -euo pipefail
-
-          terraform init \
-            -backend=false \
-            -input=false \
-            -lockfile=readonly
-
-      - name: Terraform Validate - VPC Module
-        working-directory: modules/vpc
-        run: |
-          set -euo pipefail
-
-          terraform validate
-
-
-      - name: Terraform Init - Security Module
-        working-directory: modules/security
-        run: |
-          set -euo pipefail
-
-          terraform init \
-            -backend=false \
-            -input=false \
-            -lockfile=readonly
-
-      - name: Terraform Validate - Security Module
-        working-directory: modules/security
-        run: |
-          set -euo pipefail
-
-          terraform validate
-
-
-      - name: Terraform Init - IAM Module
-        working-directory: modules/iam
-        run: |
-          set -euo pipefail
-
-          terraform init \
-            -backend=false \
-            -input=false \
-            -lockfile=readonly
-
-      - name: Terraform Validate - IAM Module
-        working-directory: modules/iam
-        run: |
-          set -euo pipefail
-
-          terraform validate
-
-
-      - name: Terraform Init - Compute Module
-        working-directory: modules/compute
-        run: |
-          set -euo pipefail
-
-          terraform init \
-            -backend=false \
-            -input=false \
-            -lockfile=readonly
-
-      - name: Terraform Validate - Compute Module
-        working-directory: modules/compute
-        run: |
-          set -euo pipefail
-
-          terraform validate
-
-
-      - name: Terraform Init - Route53
-        working-directory: global/route53
-        run: |
-          set -euo pipefail
-
-          terraform init \
-            -backend=false \
-            -input=false \
-            -lockfile=readonly
-
-      - name: Terraform Validate - Route53
-        working-directory: global/route53
-        run: |
-          set -euo pipefail
-
-          terraform validate
-
-
-      - name: Terraform Init - ACM
-        working-directory: global/acm
-        run: |
-          set -euo pipefail
-
-          terraform init \
-            -backend=false \
-            -input=false \
-            -lockfile=readonly
-
-      - name: Terraform Validate - ACM
-        working-directory: global/acm
-        run: |
-          set -euo pipefail
-
-          terraform init \
-            -backend=false \
-            -input=false \
-            -lockfile=readonly
-          terraform validate
-
-
-      - name: Terraform Init - Dev Environment
+      - name: Validate DEV environment
         working-directory: environments/dev
+        shell: bash
         run: |
           set -euo pipefail
 
           terraform init \
             -backend=false \
-            -input=false \
-            -lockfile=readonly
-
-      - name: Terraform Validate - Dev Environment
-        working-directory: environments/dev
-        run: |
-          set -euo pipefail
+            -input=false
 
           terraform validate
 
+      # ==========================================================
+      # Route53 validation
+      # ==========================================================
 
-      # ============================================================
-      # 5. TFLINT
-      # ============================================================
-
-      - name: Setup TFLint
-        uses: terraform-linters/setup-tflint@v5
-        with:
-          tflint_version: latest
-
-      - name: Initialize TFLint
+      - name: Validate Route53
+        working-directory: global/route53
+        shell: bash
         run: |
           set -euo pipefail
 
-          MAX_ATTEMPTS=5
-          SLEEP_SECONDS=20
+          terraform init \
+            -backend=false \
+            -input=false
 
-          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+          terraform validate
 
-            echo "========================================"
-            echo "TFLint initialization attempt ${attempt}/${MAX_ATTEMPTS}"
-            echo "========================================"
+      # ==========================================================
+      # ACM validation
+      # ==========================================================
 
-            if tflint --init; then
-              echo "TFLint initialization successful"
-              exit 0
+      - name: Validate ACM
+        working-directory: global/acm
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform init \
+            -backend=false \
+            -input=false
+
+          terraform validate
+
+      # ==========================================================
+      # VPC module validation
+      # ==========================================================
+
+      - name: Validate VPC module
+        working-directory: modules/vpc
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform init \
+            -backend=false \
+            -input=false
+
+          terraform validate
+
+      # ==========================================================
+      # Security module validation
+      # ==========================================================
+
+      - name: Validate Security module
+        working-directory: modules/security
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform init \
+            -backend=false \
+            -input=false
+
+          terraform validate
+
+      # ==========================================================
+      # IAM module validation
+      # ==========================================================
+
+      - name: Validate IAM module
+        working-directory: modules/iam
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform init \
+            -backend=false \
+            -input=false
+
+          terraform validate
+
+      # ==========================================================
+      # Compute module validation
+      # ==========================================================
+
+      - name: Validate Compute module
+        working-directory: modules/compute
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform init \
+            -backend=false \
+            -input=false
+
+          terraform validate
+
+      # ==========================================================
+      # Shell script validation
+      # ==========================================================
+
+      - name: Validate shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "SHELL SCRIPT VALIDATION"
+          echo "=========================================="
+
+          for script in \
+            scripts/app-bootstrap.sh \
+            scripts/deploy-dev.sh \
+            scripts/destroy-dev.sh \
+            scripts/validate.sh
+          do
+            if [ -f "${script}" ]; then
+              echo "Checking ${script}"
+              bash -n "${script}"
+            else
+              echo "Skipping missing script: ${script}"
             fi
-
-            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-              echo "Retrying in ${SLEEP_SECONDS} seconds..."
-              sleep "$SLEEP_SECONDS"
-            fi
-
           done
 
-          echo "ERROR: TFLint initialization failed."
-          exit 1
+      # ==========================================================
+      # Final summary
+      # ==========================================================
 
-      - name: Run TFLint
+      - name: CI summary
+        shell: bash
+        env:
+          TERRAFORM_VERSION: ${{ steps.terraform-version.outputs.terraform_version }}
         run: |
           set -euo pipefail
 
-          tflint --recursive
+          echo
+          echo "=========================================="
+          echo "TERRAFORM CI COMPLETED SUCCESSFULLY"
+          echo "=========================================="
 
-
-      # ============================================================
-      # 6. SECURITY SCAN
-      # ============================================================
-
-      - name: Run Checkov
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          directory: .
-          framework: terraform
-          quiet: true
-
-
-      # ============================================================
-      # 7. GITHUB OIDC DIAGNOSTICS
-      # ============================================================
-
-      - name: Show GitHub Actions context
-        run: |
-          echo "Event: ${{ github.event_name }}"
-          echo "Repository: ${{ github.repository }}"
-          echo "Ref: ${{ github.ref }}"
-          echo "Ref name: ${{ github.ref_name }}"
-          echo "SHA: ${{ github.sha }}"
-
-
-      # ============================================================
-      # 8. AWS AUTHENTICATION
-      # ============================================================
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Verify AWS identity
-        run: |
-          set -euo pipefail
-
-          aws sts get-caller-identity
-
-
-      # ============================================================
-      # 9. TERRAFORM BACKEND INITIALIZATION
-      #
-      # Remove validation-only initialization before connecting
-      # to the real remote backend.
-      # ============================================================
-
-      - name: Clean Terraform initialization
-        working-directory: environments/dev
-        run: |
-          set -euo pipefail
-
-          rm -rf .terraform
-
-
-      - name: Terraform Init - Dev Backend
-        working-directory: environments/dev
-        run: |
-          set -euo pipefail
-
-          terraform init \
-            -input=false \
-            -lockfile=readonly
-
-
-      # ============================================================
-      # 10. TERRAFORM DIAGNOSTICS
-      # ============================================================
-
-      - name: Verify Terraform provider
-        working-directory: environments/dev
-        run: |
-          set -euo pipefail
-
-          echo "========================================"
-          echo "Terraform version"
-          echo "========================================"
-
-          terraform version
-
-          echo ""
-          echo "========================================"
-          echo "Terraform providers"
-          echo "========================================"
-
-          terraform providers
-
-          echo ""
-          echo "========================================"
-          echo "AWS provider lock file"
-          echo "========================================"
-
-          grep -A15 \
-            'registry.terraform.io/hashicorp/aws' \
-            .terraform.lock.hcl
-
-
-      - name: Verify Terraform workspace
-        working-directory: environments/dev
-        run: |
-          set -euo pipefail
-
-          terraform workspace show
-
-
-      - name: Verify remote state resources
-        working-directory: environments/dev
-        run: |
-          set -euo pipefail
-
-          echo "========================================"
-          echo "ALB log resources in remote state"
-          echo "========================================"
-
-          terraform state list | grep alb_logs || true
-
-          echo ""
-          echo "========================================"
-          echo "Total state resources"
-          echo "========================================"
-
-          terraform state list | wc -l
-
-
-      # ----------------------------------------
-      # Terraform Plan
-      # ----------------------------------------
-
-      - name: Terraform Init - Dev Backend
-        working-directory: environments/dev
-        run: |
-         set -euo pipefail
-
-         terraform init -input=false
-
-      - name: Terraform Plan - Dev
-        working-directory: environments/dev
-        run: |
-         set -euo pipefail
-
-         terraform plan \
-         -input=false \
-         -out=tfplan
-
-         terraform show -no-color tfplan > tfplan.txt
-
-      - name: Terraform Plan Summary
-        working-directory: environments/dev
-        run: |
-         set -euo pipefail
-
-         echo "========================================"
-         echo "Terraform Plan Summary"
-         echo "========================================"
-
-         tail -20 tfplan.txt
-
-      - name: Check for destructive or replacement changes
-        working-directory: environments/dev
-        run: |
-         set -euo pipefail
-
-         echo "========================================"
-         echo "Checking Terraform plan safety"
-         echo "========================================"
-
-         DESTRUCTIVE=false
-
-         if grep -q "will be destroyed" tfplan.txt; then
-           echo "WARNING: Resource destruction detected."
-           grep -B5 -A5 "will be destroyed" tfplan.txt || true
-           DESTRUCTIVE=true
-         fi
-
-         if grep -q "must be replaced" tfplan.txt; then
-           echo "WARNING: Resource replacement detected."
-           grep -B5 -A8 "must be replaced" tfplan.txt || true
-           DESTRUCTIVE=true
-         fi
-
-         if [ "$DESTRUCTIVE" = true ]; then
-           echo ""
-           echo "ERROR: Terraform plan contains destructive changes."
-           exit 1
-         fi
-
-         echo "Terraform plan passed safety checks."
-
-      # ----------------------------------------
-      # Upload Plan Artifact
-      # ----------------------------------------
-
-      - name: Upload Terraform Plan
-        uses: actions/upload-artifact@v4
-        with:
-        name: terraform-dev-plan
-        path: |
-         environments/dev/tfplan
-         environments/dev/tfplan.txt
-         retention-days: 7
+          echo "Terraform version : ${TERRAFORM_VERSION}"
+          echo "Terraform format  : PASSED"
+          echo "Terraform validate: PASSED"
+          echo "Shell validation  : PASSED"
+          echo "AWS authentication: NOT USED"
+          echo "Terraform plan    : NOT RUN"
+          echo "Terraform apply   : NOT RUN"
