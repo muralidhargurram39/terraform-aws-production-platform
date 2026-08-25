@@ -34,3 +34,5 @@ Thumbs.db
 
 # Logs
 *.log
+.github/workflows-backup/
+.github/workflows-backup/

@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   TF_IN_AUTOMATION: "true"
@@ -318,9 +319,195 @@ jobs:
               echo "Skipping missing script: ${script}"
             fi
           done
+
+        # ==========================================================
+  # Terraform Plan Job
+  # Runs only after Terraform Validation succeeds
+  # ==========================================================
+
+  terraform-plan:
+    name: Terraform Plan - DEV
+    needs: terraform-validation
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      TF_VERSION: "1.15.8"
+      AWS_REGION: "ap-south-2"
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      AWS_ROLE_TO_ASSUME: "arn:aws:iam::438064565553:role/GitHubActions-Terraform-CI"
+
+    steps:
+
+      # ==========================================================
+      # Checkout
+      # ==========================================================
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ==========================================================
+      # Setup Terraform
+      # ==========================================================
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Verify Terraform version
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "TERRAFORM VERSION"
+          echo "=========================================="
+
+          terraform version
+
+      # ==========================================================
+      # AWS Authentication using GitHub OIDC
+      # ==========================================================
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "AWS CALLER IDENTITY"
+          echo "=========================================="
+
+          aws sts get-caller-identity
+
+      # ==========================================================
+      # Terraform Init
+      # ==========================================================
+
+      - name: Terraform Init - DEV
+        working-directory: environments/dev
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "TERRAFORM INIT - DEV"
+          echo "=========================================="
+
+          terraform init -input=false
+
+      # ==========================================================
+      # Terraform Plan
+      # ==========================================================
+
+      - name: Terraform Plan - DEV
+        working-directory: environments/dev
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "TERRAFORM PLAN - DEV"
+          echo "=========================================="
+
+          terraform plan \
+            -input=false \
+            -out=tfplan
+
+      # ==========================================================
+      # Generate Human-Readable Plan
+      # ==========================================================
+
+      - name: Generate plan summary
+        working-directory: environments/dev
+        run: |
+          set -euo pipefail
+
+          terraform show \
+            -no-color \
+            tfplan | tee tfplan.txt
+
+      # ==========================================================
+      # Upload Binary Terraform Plan
+      # ==========================================================
+
+      - name: Upload Terraform binary plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-dev-plan
+          path: environments/dev/tfplan
+          if-no-files-found: error
+          retention-days: 7
+
+      # ==========================================================
+      # Upload Human-Readable Plan
+      # ==========================================================
+
+      - name: Upload Terraform plan summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-dev-plan-summary
+          path: environments/dev/tfplan.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      # ==========================================================
+      # GitHub Job Summary
+      # ==========================================================
+
+      - name: Write job summary
+        run: |
+          {
+            echo "## Terraform Plan - DEV"
+            echo ""
+            echo "| Setting | Value |"
+            echo "|---|---|"
+            echo "| Environment | DEV |"
+            echo "| Terraform | ${{ env.TF_VERSION }} |"
+            echo "| AWS Region | ${{ env.AWS_REGION }} |"
+            echo "| Authentication | GitHub OIDC |"
+            echo ""
+            echo "### Result"
+            echo ""
+            echo "Terraform plan completed successfully."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ==========================================================
+      # Final Plan Summary
+      # ==========================================================
+
+      - name: Plan summary
+        run: |
+          set -euo pipefail
+
+          echo
+          echo "=========================================="
+          echo "TERRAFORM PLAN COMPLETED SUCCESSFULLY"
+          echo "=========================================="
+
+          echo "Environment       : DEV"
+          echo "Terraform version : ${{ env.TF_VERSION }}"
+          echo "AWS region        : ${{ env.AWS_REGION }}"
+          echo "AWS authentication: GitHub OIDC"
+          echo "Terraform init    : PASSED"
+          echo "Terraform plan    : PASSED"
+          echo "Plan artifact     : UPLOADED"
+          echo "Plan summary      : UPLOADED"
       
       # ==========================================================
-      # Final summary
+      # Final CI summary
       # ==========================================================
 
       - name: CI summary
@@ -342,6 +529,6 @@ jobs:
           echo "Checkov           : PASSED"
           echo "Shell validation  : PASSED"
           echo "AWS authentication: NOT USED"
-          echo "Terraform plan    : NOT RUN"
+          echo "Terraform plan    : NEXT JOB"
           echo "Terraform apply   : NOT RUN"
       
