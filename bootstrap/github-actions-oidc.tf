@@ -208,6 +208,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "ec2:DescribeAddressesAttribute",
           "ec2:DescribeFlowLogs",
           "ec2:DescribeLaunchTemplates",
+          "ec2:DescribeLaunchTemplateVersions",
           "ec2:DescribeTags"
         ]
 
@@ -234,6 +235,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "elasticloadbalancing:DescribeTargetGroups",
           "elasticloadbalancing:DescribeTargetGroupAttributes",
           "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DescribeListenerAttributes",
           "elasticloadbalancing:DescribeRules",
           "elasticloadbalancing:DescribeTargetHealth",
           "elasticloadbalancing:DescribeTags"
