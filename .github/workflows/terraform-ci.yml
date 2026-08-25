@@ -320,7 +320,7 @@ jobs:
             fi
           done
 
-        # ==========================================================
+  # ==========================================================
   # Terraform Plan Job
   # Runs only after Terraform Validation succeeds
   # ==========================================================
@@ -373,6 +373,30 @@ jobs:
           echo "=========================================="
 
           terraform version
+      
+            # ==========================================================
+      # Debug GitHub OIDC token claims
+      # ==========================================================
+
+      - name: Debug GitHub OIDC token claims
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const payload = JSON.parse(
+              Buffer.from(token.split('.')[1], 'base64url').toString()
+            );
+
+            console.log('===== GITHUB OIDC TOKEN CLAIMS =====');
+            console.log(JSON.stringify({
+              iss: payload.iss,
+              aud: payload.aud,
+              sub: payload.sub,
+              repository: payload.repository,
+              ref: payload.ref,
+              environment: payload.environment,
+              repository_owner: payload.repository_owner
+            }, null, 2));
 
       # ==========================================================
       # AWS Authentication using GitHub OIDC
@@ -531,3 +555,5 @@ jobs:
           echo "AWS authentication: NOT USED"
           echo "Terraform plan    : NEXT JOB"
           echo "Terraform apply   : NOT RUN"
+      
+      
