@@ -245,6 +245,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
 
         Action = [
           "route53:ListHostedZones",
+          "route53:ListHostedZonesByName",
           "route53:GetHostedZone",
           "route53:ListResourceRecordSets"
         ]
