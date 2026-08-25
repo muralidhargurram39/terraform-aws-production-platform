@@ -320,7 +320,7 @@ jobs:
             fi
           done
 
-        # ==========================================================
+  # ==========================================================
   # Terraform Plan Job
   # Runs only after Terraform Validation succeeds
   # ==========================================================
@@ -329,6 +329,9 @@ jobs:
     name: Terraform Plan - DEV
     needs: terraform-validation
     runs-on: ubuntu-latest
+
+    environment:
+      name: dev
 
     permissions:
       contents: read
@@ -343,7 +346,7 @@ jobs:
       AWS_REGION: "ap-south-2"
       TF_IN_AUTOMATION: "true"
       TF_INPUT: "false"
-      AWS_ROLE_TO_ASSUME: "arn:aws:iam::438064565553:role/GitHubActions-Terraform-CI"
+      AWS_ROLE_TO_ASSUME: "arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev"
 
     steps:
 
