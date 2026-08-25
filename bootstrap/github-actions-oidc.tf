@@ -206,6 +206,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "ec2:DescribeNatGateways",
           "ec2:DescribeAddresses",
           "ec2:DescribeAddressesAttribute",
+          "ec2:DescribeFlowLogs",
           "ec2:DescribeTags"
         ]
 
@@ -228,7 +229,9 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
 
         Action = [
           "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeLoadBalancerAttributes",
           "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DescribeTargetGroupAttributes",
           "elasticloadbalancing:DescribeListeners",
           "elasticloadbalancing:DescribeRules",
           "elasticloadbalancing:DescribeTargetHealth"
@@ -339,7 +342,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
 
         Action = [
           "wafv2:GetWebACL",
-          "wafv2:GetWebACLForResource",
+          "wafv2:GetLoggingConfiguration",
           "wafv2:GetWebACLForResource",
           "wafv2:ListTagsForResource",
           "wafv2:ListResourcesForWebACL"
@@ -363,6 +366,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "iam:GetPolicy",
           "iam:GetPolicyVersion",
           "iam:GetRole",
+          "iam:GetInstanceProfile",
           "iam:ListRolePolicies",
           "iam:ListAttachedRolePolicies",
           "iam:GetRolePolicy"
