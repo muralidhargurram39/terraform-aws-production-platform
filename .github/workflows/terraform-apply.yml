@@ -14,8 +14,14 @@ on:
         required: true
         type: string
 
+      plan_run_id:
+        description: "Terraform CI run ID containing terraform-dev-plan"
+        required: true
+        type: string
+
 permissions:
   contents: read
+  actions: read
   id-token: write
 
 env:
@@ -27,17 +33,6 @@ jobs:
   terraform-apply:
     name: Terraform Apply - DEV
 
-    # ==========================================================
-    # AUTOMATIC DEPLOYMENT CONDITIONS
-    # ==========================================================
-    #
-    # workflow_run:
-    #   - Terraform CI must succeed
-    #   - CI must have run against main
-    #
-    # workflow_dispatch:
-    #   - Allows controlled manual deployment
-    #
     if: |
       (
         github.event_name == 'workflow_run' &&
@@ -51,10 +46,6 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    # ==========================================================
-    # GitHub Environment Protection
-    # ==========================================================
-
     environment:
       name: dev
 
@@ -65,7 +56,7 @@ jobs:
     steps:
 
       # ==========================================================
-      # Deployment information
+      # Deployment Information
       # ==========================================================
 
       - name: Display deployment information
@@ -79,16 +70,17 @@ jobs:
           echo "Trigger event: ${{ github.event_name }}"
 
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            echo "Deployment mode: Automatic after successful Terraform CI"
-            echo "Source branch : ${{ github.event.workflow_run.head_branch }}"
-            echo "Source run ID : ${{ github.event.workflow_run.id }}"
-            echo "Source SHA    : ${{ github.event.workflow_run.head_sha }}"
+            echo "Deployment mode: Automatic"
+            echo "Source branch: ${{ github.event.workflow_run.head_branch }}"
+            echo "Source run ID: ${{ github.event.workflow_run.id }}"
+            echo "Source SHA: ${{ github.event.workflow_run.head_sha }}"
           else
             echo "Deployment mode: Manual"
+            echo "Terraform CI run ID: ${{ inputs.plan_run_id }}"
           fi
 
       # ==========================================================
-      # Checkout repository
+      # Checkout Exact Source Commit
       # ==========================================================
 
       - name: Checkout repository
@@ -97,7 +89,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       # ==========================================================
-      # Read Terraform version
+      # Read Terraform Version
       # ==========================================================
 
       - name: Read Terraform version
@@ -116,7 +108,7 @@ jobs:
 
           echo "Terraform version: ${TERRAFORM_VERSION}"
 
-          echo "terraform_version=${TERRAFORM_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "terraform_version=${TERRAFORM_VERSION}" >> "$GITHUB_OUTPUT"
 
       # ==========================================================
       # Setup Terraform
@@ -133,6 +125,56 @@ jobs:
           set -euo pipefail
 
           terraform version
+
+      # ==========================================================
+      # Resolve Terraform CI Run ID
+      # ==========================================================
+
+      - name: Resolve Terraform plan run ID
+        id: plan-run
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            PLAN_RUN_ID="${{ github.event.workflow_run.id }}"
+          else
+            PLAN_RUN_ID="${{ inputs.plan_run_id }}"
+          fi
+
+          echo "plan_run_id=${PLAN_RUN_ID}" >> "$GITHUB_OUTPUT"
+
+          echo "Terraform plan workflow run ID: ${PLAN_RUN_ID}"
+
+      # ==========================================================
+      # Download Exact Terraform Plan
+      # ==========================================================
+
+      - name: Download Terraform plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-dev-plan
+          path: environments/dev
+          run-id: ${{ steps.plan-run.outputs.plan_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ==========================================================
+      # Verify Downloaded Plan
+      # ==========================================================
+
+      - name: Verify Terraform plan artifact
+        working-directory: environments/dev
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "VERIFYING TERRAFORM PLAN"
+          echo "=========================================="
+
+          test -f tfplan
+
+          ls -lh tfplan
+
+          file tfplan
 
       # ==========================================================
       # AWS Authentication using GitHub OIDC
@@ -166,24 +208,7 @@ jobs:
           terraform init -input=false
 
       # ==========================================================
-      # Generate fresh Terraform plan
-      # ==========================================================
-
-      - name: Terraform Plan
-        working-directory: environments/dev
-        run: |
-          set -euo pipefail
-
-          echo "=========================================="
-          echo "GENERATING TERRAFORM PLAN"
-          echo "=========================================="
-
-          terraform plan \
-            -input=false \
-            -out=tfplan
-
-      # ==========================================================
-      # Display deployment plan
+      # Display Downloaded Plan
       # ==========================================================
 
       - name: Display Terraform plan
@@ -191,12 +216,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "=========================================="
+          echo "DOWNLOADED TERRAFORM PLAN"
+          echo "=========================================="
+
           terraform show \
             -no-color \
             tfplan
 
       # ==========================================================
-      # Terraform Apply
+      # Apply Exact Plan
       # ==========================================================
 
       - name: Terraform Apply
@@ -205,7 +234,7 @@ jobs:
           set -euo pipefail
 
           echo "=========================================="
-          echo "APPLYING TERRAFORM PLAN"
+          echo "APPLYING DOWNLOADED TERRAFORM PLAN"
           echo "=========================================="
 
           terraform apply \
@@ -220,14 +249,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "==========================================" >> "${GITHUB_STEP_SUMMARY}"
-          echo "# Terraform DEV Deployment Completed" >> "${GITHUB_STEP_SUMMARY}"
-          echo "==========================================" >> "${GITHUB_STEP_SUMMARY}"
-          echo "" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- **Environment:** DEV" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- **Terraform version:** ${{ steps.terraform-version.outputs.terraform_version }}" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- **AWS region:** ${{ env.AWS_REGION }}" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- **AWS authentication:** GitHub OIDC" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- **Terraform init:** PASSED" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- **Terraform plan:** PASSED" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- **Terraform apply:** PASSED" >> "${GITHUB_STEP_SUMMARY}"
+          {
+            echo "# Terraform DEV Deployment Completed"
+            echo ""
+            echo "| Setting | Value |"
+            echo "|---|---|"
+            echo "| Environment | DEV |"
+            echo "| Terraform version | ${{ steps.terraform-version.outputs.terraform_version }} |"
+            echo "| AWS region | ${{ env.AWS_REGION }} |"
+            echo "| Authentication | GitHub OIDC |"
+            echo "| Plan source run | ${{ steps.plan-run.outputs.plan_run_id }} |"
+            echo "| Terraform init | PASSED |"
+            echo "| Terraform apply | PASSED |"
+          } >> "${GITHUB_STEP_SUMMARY}"
