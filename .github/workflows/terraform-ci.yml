@@ -374,7 +374,7 @@ jobs:
 
           terraform version
       
-            - name: Debug GitHub OIDC claims
+      - name: Debug GitHub OIDC claims
         shell: bash
         run: |
           set -euo pipefail
