@@ -8,8 +8,7 @@ on:
   push:
     branches:
       - main
-      - "feature/**"
-      - "fix/**"
+      - "**"
 
   workflow_dispatch:
 
