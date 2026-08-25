@@ -199,6 +199,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "ec2:DescribeSubnets",
           "ec2:DescribeRouteTables",
           "ec2:DescribeSecurityGroups",
+          "ec2:DescribeSecurityGroupRules",
           "ec2:DescribeImages",
           "ec2:DescribeInstances",
           "ec2:DescribeInternetGateways",
@@ -206,6 +207,31 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "ec2:DescribeAddresses",
           "ec2:DescribeAddressesAttribute",
           "ec2:DescribeTags"
+        ]
+
+        Resource = "*"
+      },
+
+      # ----------------------------------------------
+      # Elastic Load Balancing v2 Discovery
+      #
+      # Required for Terraform to refresh existing:
+      # - Application Load Balancers
+      # - Target Groups
+      # - Listeners
+      # - Target health
+      # ----------------------------------------------
+
+      {
+        Sid    = "ELBv2Discovery"
+        Effect = "Allow"
+
+        Action = [
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DescribeRules",
+          "elasticloadbalancing:DescribeTargetHealth"
         ]
 
         Resource = "*"
@@ -336,9 +362,10 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
         Action = [
           "iam:GetPolicy",
           "iam:GetPolicyVersion",
-          "iam:ListPolicyVersions",
-          "iam:ListPolicyTags",
-          "iam:GetRole"
+          "iam:GetRole",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:GetRolePolicy"
         ]
 
         Resource = "*"
@@ -356,7 +383,9 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
         Effect = "Allow"
 
         Action = [
-          "logs:DescribeLogGroups"
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams",
+          "logs:ListTagsForResource"
         ]
 
         Resource = "*"
