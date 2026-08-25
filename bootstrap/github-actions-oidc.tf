@@ -239,6 +239,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "s3:GetAccelerateConfiguration",
           "s3:GetObjectLockConfiguration",
           "s3:GetBucketIntelligentTieringConfiguration",
+          "s3:GetBucketObjectLockConfiguration",
           "s3:ListBucket"
         ]
 
