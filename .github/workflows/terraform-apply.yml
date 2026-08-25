@@ -1,21 +1,21 @@
 name: Terraform Apply
 
 on:
+  workflow_run:
+    workflows:
+      - Terraform CI
+    types:
+      - completed
+
   workflow_dispatch:
     inputs:
-      run_id:
-        description: "GitHub Actions run ID containing the approved Terraform plan artifact"
-        required: true
-        type: string
-
       confirmation:
-        description: 'Type APPLY to confirm Terraform deployment'
+        description: "Type APPLY to confirm Terraform deployment"
         required: true
         type: string
 
 permissions:
   contents: read
-  actions: read
   id-token: write
 
 env:
@@ -26,7 +26,34 @@ env:
 jobs:
   terraform-apply:
     name: Terraform Apply - DEV
+
+    # ==========================================================
+    # AUTOMATIC DEPLOYMENT CONDITIONS
+    # ==========================================================
+    #
+    # workflow_run:
+    #   - Terraform CI must succeed
+    #   - CI must have run against main
+    #
+    # workflow_dispatch:
+    #   - Allows controlled manual deployment
+    #
+    if: |
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      ) ||
+      (
+        github.event_name == 'workflow_dispatch' &&
+        inputs.confirmation == 'APPLY'
+      )
+
     runs-on: ubuntu-latest
+
+    # ==========================================================
+    # GitHub Environment Protection
+    # ==========================================================
 
     environment:
       name: dev
@@ -36,20 +63,29 @@ jobs:
         shell: bash
 
     steps:
+
       # ==========================================================
-      # Validate confirmation
+      # Deployment information
       # ==========================================================
 
-      - name: Validate deployment confirmation
+      - name: Display deployment information
         run: |
           set -euo pipefail
 
-          if [ "${{ inputs.confirmation }}" != "APPLY" ]; then
-            echo "ERROR: Deployment confirmation must be APPLY"
-            exit 1
-          fi
+          echo "=========================================="
+          echo "TERRAFORM DEV DEPLOYMENT"
+          echo "=========================================="
 
-          echo "Deployment confirmation accepted."
+          echo "Trigger event: ${{ github.event_name }}"
+
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "Deployment mode: Automatic after successful Terraform CI"
+            echo "Source branch : ${{ github.event.workflow_run.head_branch }}"
+            echo "Source run ID : ${{ github.event.workflow_run.id }}"
+            echo "Source SHA    : ${{ github.event.workflow_run.head_sha }}"
+          else
+            echo "Deployment mode: Manual"
+          fi
 
       # ==========================================================
       # Checkout repository
@@ -57,6 +93,8 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       # ==========================================================
       # Read Terraform version
@@ -128,79 +166,51 @@ jobs:
           terraform init -input=false
 
       # ==========================================================
-      # Download approved Terraform plan artifact
+      # Generate fresh Terraform plan
       # ==========================================================
 
-      - name: Download approved Terraform plan
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.run_id }}
+      - name: Terraform Plan
+        working-directory: environments/dev
         run: |
           set -euo pipefail
 
           echo "=========================================="
-          echo "DOWNLOADING APPROVED TERRAFORM PLAN"
+          echo "GENERATING TERRAFORM PLAN"
           echo "=========================================="
 
-          echo "Source workflow run ID: ${RUN_ID}"
-
-          mkdir -p /tmp/terraform-plan
-
-          gh run download "${RUN_ID}" \
-            --repo "${{ github.repository }}" \
-            --name terraform-dev-plan \
-            --dir /tmp/terraform-plan
-
-          echo
-          echo "Downloaded files:"
-          find /tmp/terraform-plan -type f
+          terraform plan \
+            -input=false \
+            -out=tfplan
 
       # ==========================================================
-      # Validate downloaded plan
+      # Display deployment plan
       # ==========================================================
 
-      - name: Validate Terraform plan artifact
-        run: |
-          set -euo pipefail
-
-          PLAN_FILE="/tmp/terraform-plan/tfplan"
-
-          if [ ! -f "${PLAN_FILE}" ]; then
-            echo "ERROR: Terraform plan file not found"
-            exit 1
-          fi
-
-          echo "Terraform plan artifact found."
-
-      # ==========================================================
-      # Display approved plan
-      # ==========================================================
-
-      - name: Display approved Terraform plan
+      - name: Display Terraform plan
         working-directory: environments/dev
         run: |
           set -euo pipefail
 
           terraform show \
             -no-color \
-            /tmp/terraform-plan/tfplan
+            tfplan
 
       # ==========================================================
       # Terraform Apply
       # ==========================================================
 
-      - name: Terraform Apply approved plan
+      - name: Terraform Apply
         working-directory: environments/dev
         run: |
           set -euo pipefail
 
           echo "=========================================="
-          echo "APPLYING APPROVED TERRAFORM PLAN"
+          echo "APPLYING TERRAFORM PLAN"
           echo "=========================================="
 
           terraform apply \
             -input=false \
-            /tmp/terraform-plan/tfplan
+            tfplan
 
       # ==========================================================
       # Deployment Summary
@@ -210,14 +220,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "=========================================="
-          echo "TERRAFORM APPLY COMPLETED SUCCESSFULLY"
-          echo "=========================================="
-
-          echo "Environment       : DEV"
-          echo "Terraform version : ${{ steps.terraform-version.outputs.terraform_version }}"
-          echo "AWS region        : ${{ env.AWS_REGION }}"
-          echo "AWS authentication: GitHub OIDC"
-          echo "Plan source run   : ${{ inputs.run_id }}"
-          echo "Terraform init    : PASSED"
-          echo "Terraform apply   : PASSED"
+          echo "==========================================" >> "${GITHUB_STEP_SUMMARY}"
+          echo "# Terraform DEV Deployment Completed" >> "${GITHUB_STEP_SUMMARY}"
+          echo "==========================================" >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- **Environment:** DEV" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- **Terraform version:** ${{ steps.terraform-version.outputs.terraform_version }}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- **AWS region:** ${{ env.AWS_REGION }}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- **AWS authentication:** GitHub OIDC" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- **Terraform init:** PASSED" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- **Terraform plan:** PASSED" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- **Terraform apply:** PASSED" >> "${GITHUB_STEP_SUMMARY}"
