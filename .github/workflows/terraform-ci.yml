@@ -247,6 +247,50 @@ jobs:
             -input=false
 
           terraform validate
+      
+      # ==========================================================
+      # TFLint
+      # ==========================================================
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v5
+        with:
+          tflint_version: latest
+
+      - name: Initialize TFLint
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "TFLINT INITIALIZATION"
+          echo "=========================================="
+
+          tflint --init
+
+      - name: Run TFLint
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "TFLINT VALIDATION"
+          echo "=========================================="
+
+          tflint --recursive
+      
+      # ==========================================================
+      # Checkov security scan
+      # ==========================================================
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          quiet: true
+      
+        
 
       # ==========================================================
       # Shell script validation
@@ -274,7 +318,7 @@ jobs:
               echo "Skipping missing script: ${script}"
             fi
           done
-
+      
       # ==========================================================
       # Final summary
       # ==========================================================
@@ -294,7 +338,10 @@ jobs:
           echo "Terraform version : ${TERRAFORM_VERSION}"
           echo "Terraform format  : PASSED"
           echo "Terraform validate: PASSED"
+          echo "TFLint            : PASSED"
+          echo "Checkov           : PASSED"
           echo "Shell validation  : PASSED"
           echo "AWS authentication: NOT USED"
           echo "Terraform plan    : NOT RUN"
           echo "Terraform apply   : NOT RUN"
+      
