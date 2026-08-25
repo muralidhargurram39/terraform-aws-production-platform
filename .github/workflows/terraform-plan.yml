@@ -5,7 +5,8 @@ on:
     branches:
       - main
     paths:
-      - "environments/dev/**"
+      - "bootstrap/**"
+      - "environments/**"
       - "modules/**"
       - "global/**"
       - ".github/workflows/terraform-plan.yml"
@@ -15,10 +16,6 @@ on:
 permissions:
   contents: read
   id-token: write
-
-concurrency:
-  group: terraform-plan-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 env:
   TF_VERSION: "1.15.8"
@@ -47,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
 
       # ==========================================================
-      # Terraform
+      # Setup Terraform
       # ==========================================================
 
       - name: Setup Terraform
@@ -59,6 +56,10 @@ jobs:
       - name: Verify Terraform version
         run: |
           set -euo pipefail
+
+          echo "=========================================="
+          echo "TERRAFORM VERSION"
+          echo "=========================================="
 
           terraform version
 
@@ -86,10 +87,14 @@ jobs:
       # Terraform Init
       # ==========================================================
 
-      - name: Terraform Init
+      - name: Terraform Init - DEV
         working-directory: environments/dev
         run: |
           set -euo pipefail
+
+          echo "=========================================="
+          echo "TERRAFORM INIT - DEV"
+          echo "=========================================="
 
           terraform init \
             -input=false
@@ -98,20 +103,24 @@ jobs:
       # Terraform Plan
       # ==========================================================
 
-      - name: Terraform Plan
+      - name: Terraform Plan - DEV
         working-directory: environments/dev
         run: |
           set -euo pipefail
+
+          echo "=========================================="
+          echo "TERRAFORM PLAN - DEV"
+          echo "=========================================="
 
           terraform plan \
             -input=false \
             -out=tfplan
 
       # ==========================================================
-      # Display Plan Summary
+      # Generate Human-Readable Plan
       # ==========================================================
 
-      - name: Terraform Plan Summary
+      - name: Generate plan summary
         working-directory: environments/dev
         run: |
           set -euo pipefail
@@ -120,25 +129,71 @@ jobs:
           echo "TERRAFORM PLAN SUMMARY"
           echo "=========================================="
 
-          terraform show -no-color tfplan
+          terraform show \
+            -no-color \
+            tfplan | tee tfplan.txt
 
       # ==========================================================
-      # Upload Plan Artifact
+      # Upload Binary Plan
       # ==========================================================
 
-      - name: Upload Terraform plan
+      - name: Upload Terraform binary plan
         uses: actions/upload-artifact@v4
         with:
           name: terraform-dev-plan
           path: environments/dev/tfplan
+          if-no-files-found: error
           retention-days: 7
 
       # ==========================================================
-      # Summary
+      # Upload Human-Readable Plan
+      # ==========================================================
+
+      - name: Upload Terraform plan summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-dev-plan-summary
+          path: environments/dev/tfplan.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      # ==========================================================
+      # Job Summary
+      # ==========================================================
+
+      - name: Write job summary
+        working-directory: environments/dev
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## Terraform Plan - DEV"
+            echo ""
+            echo "| Setting | Value |"
+            echo "|---|---|"
+            echo "| Terraform | ${{ env.TF_VERSION }} |"
+            echo "| AWS Region | ${{ env.AWS_REGION }} |"
+            echo "| Authentication | GitHub OIDC |"
+            echo "| Environment | DEV |"
+            echo ""
+            echo "### Result"
+            echo ""
+            echo "Terraform plan completed successfully."
+            echo ""
+            echo "Artifacts:"
+            echo "- \`terraform-dev-plan\` — binary Terraform plan"
+            echo "- \`terraform-dev-plan-summary\` — human-readable plan"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ==========================================================
+      # Final Summary
       # ==========================================================
 
       - name: Plan summary
         run: |
+          set -euo pipefail
+
+          echo
           echo "=========================================="
           echo "TERRAFORM PLAN COMPLETED SUCCESSFULLY"
           echo "=========================================="
@@ -146,6 +201,8 @@ jobs:
           echo "Environment       : DEV"
           echo "Terraform version : ${{ env.TF_VERSION }}"
           echo "AWS region        : ${{ env.AWS_REGION }}"
-          echo "AWS authentication: OIDC"
+          echo "AWS authentication: GitHub OIDC"
           echo "Terraform init    : PASSED"
           echo "Terraform plan    : PASSED"
+          echo "Plan artifact     : UPLOADED"
+          echo "Plan summary      : UPLOADED"
