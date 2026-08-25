@@ -1,21 +1,26 @@
-name: Terraform Apply - Dev
+name: Terraform Apply
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      confirm_apply:
+        description: "Type APPLY to confirm Terraform deployment"
+        required: true
+        type: string
 
 permissions:
-  id-token: write
   contents: read
+  id-token: write
 
-concurrency:
-  group: terraform-dev-apply
-  cancel-in-progress: false
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  AWS_REGION: "ap-south-2"
+  AWS_ROLE_TO_ASSUME: "arn:aws:iam::438064565553:role/GitHubActions-Terraform-CI"
 
 jobs:
   terraform-apply:
-    name: Terraform Apply - Dev
+    name: Terraform Apply - DEV
 
     runs-on: ubuntu-latest
 
@@ -24,139 +29,132 @@ jobs:
 
     defaults:
       run:
-        working-directory: environments/dev
+        shell: bash
 
     steps:
 
-      # ---------------------------------------------
-      # Checkout repository
-      # ---------------------------------------------
+      # ==========================================================
+      # Safety Confirmation
+      # ==========================================================
+
+      - name: Verify deployment confirmation
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.confirm_apply }}" != "APPLY" ]; then
+            echo "ERROR: Deployment not confirmed."
+            echo "Type APPLY exactly when starting the workflow."
+            exit 1
+          fi
+
+          echo "Deployment confirmation accepted."
+
+      # ==========================================================
+      # Checkout
+      # ==========================================================
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Inspect GitHub OIDC claims
-        shell: bash
+      # ==========================================================
+      # Read Terraform Version
+      # ==========================================================
+
+      - name: Read Terraform version
+        id: terraform-version
         run: |
           set -euo pipefail
 
-          echo "Repository: ${{ github.repository }}"
-          echo "Event: ${{ github.event_name }}"
-          echo "Ref: ${{ github.ref }}"
-          echo "Ref name: ${{ github.ref_name }}"
+          test -f .terraform-version
 
-          RESPONSE="$(curl -sS \
-            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")"
+          TERRAFORM_VERSION="$(tr -d '[:space:]' < .terraform-version)"
 
-          TOKEN="$(echo "$RESPONSE" | jq -r '.value')"
+          if [[ ! "${TERRAFORM_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: Invalid Terraform version: ${TERRAFORM_VERSION}"
+            exit 1
+          fi
 
-          PAYLOAD="$(echo "$TOKEN" | cut -d '.' -f2)"
+          echo "Terraform version: ${TERRAFORM_VERSION}"
 
-          PAYLOAD="${PAYLOAD//-/+}"
-          PAYLOAD="${PAYLOAD//_/\/}"
+          echo "terraform_version=${TERRAFORM_VERSION}" >> "${GITHUB_OUTPUT}"
 
-          case $((${#PAYLOAD} % 4)) in
-            2) PAYLOAD="${PAYLOAD}==" ;;
-            3) PAYLOAD="${PAYLOAD}=" ;;
-          esac
-
-          echo "$PAYLOAD" | base64 --decode | jq .
-
-      - name: Inspect GitHub OIDC claims
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Repository: ${{ github.repository }}"
-          echo "Event: ${{ github.event_name }}"
-          echo "Ref: ${{ github.ref }}"
-          echo "Ref name: ${{ github.ref_name }}"
-
-          RESPONSE="$(curl -sS \
-            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")"
-
-          TOKEN="$(echo "$RESPONSE" | jq -r '.value')"
-
-          PAYLOAD="$(echo "$TOKEN" | cut -d '.' -f2)"
-
-          PAYLOAD="${PAYLOAD//-/+}"
-          PAYLOAD="${PAYLOAD//_/\/}"
-
-          case $((${#PAYLOAD} % 4)) in
-            2) PAYLOAD="${PAYLOAD}==" ;;
-            3) PAYLOAD="${PAYLOAD}=" ;;
-          esac
-
-          echo "$PAYLOAD" | base64 --decode | jq .
-
-
-      # ---------------------------------------------
-      # Configure AWS using GitHub OIDC
-      # ---------------------------------------------
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
-        with:
-          role-to-assume: arn:aws:iam::438064565553:role/GitHubActions-Terraform-Dev-Apply
-          aws-region: ap-south-2
-
-
-      # ---------------------------------------------
-      # Verify AWS identity
-      # ---------------------------------------------
-
-      - name: Verify AWS identity
-        run: aws sts get-caller-identity
-
-
-      # ---------------------------------------------
+      # ==========================================================
       # Setup Terraform
-      # ---------------------------------------------
+      # ==========================================================
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ steps.terraform-version.outputs.terraform_version }}
+          terraform_wrapper: false
 
+      - name: Verify Terraform version
+        run: |
+          set -euo pipefail
 
-      # ---------------------------------------------
+          terraform version
+
+      # ==========================================================
+      # AWS Authentication
+      # ==========================================================
+
+      - name: Configure AWS credentials using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "AWS CALLER IDENTITY"
+          echo "=========================================="
+
+          aws sts get-caller-identity
+
+      # ==========================================================
       # Terraform Init
-      # ---------------------------------------------
+      # ==========================================================
 
       - name: Terraform Init
-        run: terraform init -input=false
-
-
-      # ---------------------------------------------
-      # Terraform Validate
-      # ---------------------------------------------
-
-      - name: Terraform Validate
-        run: terraform validate
-
-
-      # ---------------------------------------------
-      # Terraform Plan
-      #
-      # Generate a fresh plan from main.
-      # We intentionally do NOT reuse the plan
-      # generated on the feature branch.
-      # ---------------------------------------------
-
-      - name: Terraform Plan
+        working-directory: environments/dev
         run: |
-          terraform plan \
-            -input=false \
-            -out=tfplan
+          set -euo pipefail
 
+          terraform init -input=false
 
-      # ---------------------------------------------
+      # ==========================================================
       # Terraform Apply
-      # ---------------------------------------------
+      # ==========================================================
 
       - name: Terraform Apply
+        working-directory: environments/dev
         run: |
+          set -euo pipefail
+
           terraform apply \
             -input=false \
-            -auto-approve \
-            tfplan
+            -auto-approve
+
+      # ==========================================================
+      # Deployment Summary
+      # ==========================================================
+
+      - name: Deployment summary
+        run: |
+          set -euo pipefail
+
+          echo
+          echo "=========================================="
+          echo "TERRAFORM APPLY COMPLETED SUCCESSFULLY"
+          echo "=========================================="
+
+          echo "Environment       : DEV"
+          echo "Terraform version : ${{ steps.terraform-version.outputs.terraform_version }}"
+          echo "AWS region        : ${{ env.AWS_REGION }}"
+          echo "AWS authentication: GitHub OIDC"
+          echo "Confirmation      : VERIFIED"
+          echo "Terraform init    : PASSED"
+          echo "Terraform apply   : PASSED"

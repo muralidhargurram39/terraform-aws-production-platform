@@ -512,10 +512,10 @@ jobs:
 
       - name: CI summary
         shell: bash
-        env:
-          TERRAFORM_VERSION: ${{ steps.terraform-version.outputs.terraform_version }}
         run: |
           set -euo pipefail
+
+          TERRAFORM_VERSION="$(terraform version -json | jq -r '.terraform_version')"
 
           echo
           echo "=========================================="
@@ -531,4 +531,3 @@ jobs:
           echo "AWS authentication: NOT USED"
           echo "Terraform plan    : NEXT JOB"
           echo "Terraform apply   : NOT RUN"
-      
