@@ -35,7 +35,6 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 # - feature branches
 # - pull requests
 # - terraform-ci GitHub environment
-# Feature branches, Pull Requests and CI environment
 # ==================================================
 
 resource "aws_iam_role" "github_actions_terraform_ci" {
@@ -66,7 +65,6 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
               "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:pull_request",
               "repo:muralidhargurram39@298685762/terraform-aws-production-platform@1334950847:environment:terraform-ci"
             ]
-
           }
         }
       }
@@ -86,14 +84,19 @@ resource "aws_iam_role" "github_actions_terraform_ci" {
 #
 # Purpose:
 # - Read Terraform remote state
-# - Manage Terraform state lock
-# - Read KMS-encrypted state
-# - Perform AWS discovery required for terraform plan
+# - Manage Terraform state locks
+# - Read KMS-encrypted Terraform state
+# - Perform AWS resource discovery
+# - Refresh Terraform-managed resources
+#
+# This role is intentionally read-only for
+# infrastructure resources.
 # ==================================================
 
 resource "aws_iam_policy" "github_actions_terraform_ci" {
-  #checkov:skip=CKV_AWS_355:Some AWS read-only discovery APIs require Resource "*"
-  #checkov:skip=CKV_AWS_288:Policy contains only Terraform state access and read-only discovery permissions
+  #checkov:skip=CKV_AWS_355:Several AWS read-only discovery APIs require Resource "*".
+  #checkov:skip=CKV_AWS_288:Policy is intentionally limited to Terraform backend access and read-only resource discovery.
+
   name        = "GitHubActions-Terraform-CI"
   description = "Read-only access required by GitHub Actions Terraform CI"
 
@@ -103,7 +106,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
     Statement = [
 
       # ----------------------------------------------
-      # S3 Terraform State Bucket
+      # Terraform State Bucket - List
       # ----------------------------------------------
 
       {
@@ -118,7 +121,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
       },
 
       # ----------------------------------------------
-      # Read Terraform State Files
+      # Terraform State Files - Read
       # ----------------------------------------------
 
       {
@@ -131,20 +134,16 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
         ]
 
         Resource = [
-
-          # Dev environment state
           "arn:aws:s3:::aws-production-platform-terraform-state/environments/dev/terraform.tfstate",
-
-          # Global ACM state
           "arn:aws:s3:::aws-production-platform-terraform-state/global/acm/terraform.tfstate",
-
-          # Global Route53 state
           "arn:aws:s3:::aws-production-platform-terraform-state/global/route53/terraform.tfstate"
         ]
       },
 
       # ----------------------------------------------
       # Terraform State Locks
+      #
+      # Required by Terraform S3 backend locking.
       # ----------------------------------------------
 
       {
@@ -158,22 +157,16 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
         ]
 
         Resource = [
-
-          # Dev environment lock
           "arn:aws:s3:::aws-production-platform-terraform-state/environments/dev/terraform.tfstate.tflock",
-
-          # ACM lock
           "arn:aws:s3:::aws-production-platform-terraform-state/global/acm/terraform.tfstate.tflock",
-
-          # Route53 lock
           "arn:aws:s3:::aws-production-platform-terraform-state/global/route53/terraform.tfstate.tflock"
         ]
       },
 
       # ----------------------------------------------
-      # KMS Access
+      # Terraform State KMS Access
       #
-      # Required to read encrypted Terraform state
+      # Required to decrypt encrypted Terraform state.
       # ----------------------------------------------
 
       {
@@ -189,9 +182,10 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
       },
 
       # ----------------------------------------------
-      # EC2 Read / Discovery
+      # EC2 / VPC Discovery
       #
-      # Required for Terraform data sources and plan
+      # Required for Terraform refresh, data sources,
+      # and infrastructure planning.
       # ----------------------------------------------
 
       {
@@ -218,7 +212,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
       # ----------------------------------------------
       # AWS SSM Public Parameters
       #
-      # Required for Amazon Linux AMI lookup
+      # Required for Amazon Linux AMI lookup.
       # ----------------------------------------------
 
       {
@@ -235,8 +229,10 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
       # ----------------------------------------------
       # Route 53 Discovery
       #
-      # Required for Terraform data sources and
-      # reading existing DNS records during plan
+      # Required for:
+      # - Hosted zone data sources
+      # - DNS record refresh
+      # - Hosted zone tag discovery
       # ----------------------------------------------
 
       {
@@ -247,7 +243,99 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "route53:ListHostedZones",
           "route53:ListHostedZonesByName",
           "route53:GetHostedZone",
-          "route53:ListResourceRecordSets"
+          "route53:ListResourceRecordSets",
+          "route53:ListTagsForResource"
+        ]
+
+        Resource = "*"
+      },
+
+      # ----------------------------------------------
+      # S3 ALB Access Logs Bucket Discovery
+      #
+      # Required to refresh the Terraform-managed
+      # ALB access log bucket configuration.
+      # ----------------------------------------------
+
+      {
+        Sid    = "S3ALBLogsDiscovery"
+        Effect = "Allow"
+
+        Action = [
+          "s3:GetBucketAcl",
+          "s3:GetBucketPolicy",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:GetBucketOwnershipControls",
+          "s3:GetEncryptionConfiguration",
+          "s3:GetLifecycleConfiguration",
+          "s3:GetBucketVersioning",
+          "s3:GetBucketLogging",
+          "s3:GetBucketLocation"
+        ]
+
+        Resource = "arn:aws:s3:::dev-platform-alb-access-logs"
+      },
+
+      # ----------------------------------------------
+      # KMS Discovery
+      #
+      # Required to refresh the KMS key used for
+      # WAF logging infrastructure.
+      # ----------------------------------------------
+
+      {
+        Sid    = "KMSDiscovery"
+        Effect = "Allow"
+
+        Action = [
+          "kms:DescribeKey",
+          "kms:GetKeyPolicy",
+          "kms:GetKeyRotationStatus",
+          "kms:ListResourceTags",
+          "kms:ListAliases"
+        ]
+
+        Resource = "*"
+      },
+
+      # ----------------------------------------------
+      # WAFv2 Discovery
+      #
+      # Required to refresh the Application Load
+      # Balancer Web ACL and associated resources.
+      # ----------------------------------------------
+
+      {
+        Sid    = "WAFv2Discovery"
+        Effect = "Allow"
+
+        Action = [
+          "wafv2:GetWebACL",
+          "wafv2:GetWebACLForResource",
+          "wafv2:GetWebACLForResource",
+          "wafv2:ListTagsForResource",
+          "wafv2:ListResourcesForWebACL"
+        ]
+
+        Resource = "*"
+      },
+
+      # ----------------------------------------------
+      # IAM Policy Discovery
+      #
+      # Required to refresh Terraform-managed IAM
+      # policies and permission boundaries.
+      # ----------------------------------------------
+
+      {
+        Sid    = "IAMPolicyDiscovery"
+        Effect = "Allow"
+
+        Action = [
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:ListPolicyVersions",
+          "iam:ListPolicyTags"
         ]
 
         Resource = "*"
@@ -290,7 +378,7 @@ resource "aws_iam_role_policy_attachment" "github_actions_terraform_ci" {
 # ==================================================
 # GitHub Actions Terraform Dev Apply Role
 #
-# Used only by the GitHub "dev" environment
+# Used only by the GitHub "dev" environment.
 # ==================================================
 
 resource "aws_iam_role" "github_actions_terraform_dev_apply" {
