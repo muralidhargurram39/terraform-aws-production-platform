@@ -245,6 +245,23 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
       },
 
       # ----------------------------------------------
+      # Auto Scaling Discovery
+      #
+      # Required for Terraform plan/state refresh
+      # ----------------------------------------------
+
+      {
+        Sid    = "AutoScalingDiscovery"
+        Effect = "Allow"
+
+        Action = [
+          "autoscaling:DescribeAutoScalingGroups"
+        ]
+
+        Resource = "*"
+      },
+
+      # ----------------------------------------------
       # AWS SSM Public Parameters
       #
       # Required for Amazon Linux AMI lookup.
