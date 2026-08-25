@@ -50,12 +50,18 @@
         "elasticloadbalancing:Describe*",
         "iam:Get*",
         "iam:List*",
+	"kms:Describe*",
+        "kms:List*",
+        "kms:GetKeyPolicy",
+        "kms:GetKeyRotationStatus",
         "logs:Describe*",
         "logs:List*",
         "route53:Get*",
         "route53:List*",
         "s3:Get*",
         "s3:List*",
+	"wafv2:Get*",
+        "wafv2:List*",
         "sts:GetCallerIdentity"
       ],
       "Resource": "*"
