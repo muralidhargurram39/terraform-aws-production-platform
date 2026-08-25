@@ -195,6 +195,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
         Action = [
           "ec2:DescribeAvailabilityZones",
           "ec2:DescribeVpcs",
+          "ec2:DescribeVpcAttribute",
           "ec2:DescribeSubnets",
           "ec2:DescribeRouteTables",
           "ec2:DescribeSecurityGroups",
@@ -203,6 +204,7 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "ec2:DescribeInternetGateways",
           "ec2:DescribeNatGateways",
           "ec2:DescribeAddresses",
+          "ec2:DescribeAddressesAttribute",
           "ec2:DescribeTags"
         ]
 
@@ -335,7 +337,44 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
           "iam:GetPolicy",
           "iam:GetPolicyVersion",
           "iam:ListPolicyVersions",
-          "iam:ListPolicyTags"
+          "iam:ListPolicyTags",
+          "iam:GetRole"
+        ]
+
+        Resource = "*"
+      },
+
+      # ----------------------------------------------
+      # CloudWatch Logs Discovery
+      #
+      # Required for Terraform to read existing
+      # CloudWatch Log Groups during plan.
+      # ----------------------------------------------
+
+      {
+        Sid    = "CloudWatchLogsDiscovery"
+        Effect = "Allow"
+
+        Action = [
+          "logs:DescribeLogGroups"
+        ]
+
+        Resource = "*"
+      },
+
+      # ----------------------------------------------
+      # IAM Access Analyzer Discovery
+      #
+      # Required for Terraform to read existing
+      # Access Analyzer resources during plan.
+      # ----------------------------------------------
+
+      {
+        Sid    = "AccessAnalyzerDiscovery"
+        Effect = "Allow"
+
+        Action = [
+          "access-analyzer:GetAnalyzer"
         ]
 
         Resource = "*"
