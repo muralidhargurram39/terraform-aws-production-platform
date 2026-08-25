@@ -5,8 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "bootstrap/**"
-      - "environments/**"
+      - "environments/dev/**"
       - "modules/**"
       - "global/**"
       - ".github/workflows/terraform-plan.yml"
@@ -16,6 +15,10 @@ on:
 permissions:
   contents: read
   id-token: write
+
+concurrency:
+  group: terraform-plan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   TF_VERSION: "1.15.8"
