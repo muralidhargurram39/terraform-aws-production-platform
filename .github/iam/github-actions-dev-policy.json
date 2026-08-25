@@ -51,6 +51,7 @@
         "iam:Get*",
         "iam:List*",
 	"kms:Describe*",
+	"kms:GetKeyPolicy",
         "kms:List*",
         "logs:Describe*",
         "logs:List*",
