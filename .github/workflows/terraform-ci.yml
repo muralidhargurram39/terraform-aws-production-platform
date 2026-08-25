@@ -330,9 +330,6 @@ jobs:
     needs: terraform-validation
     runs-on: ubuntu-latest
 
-    environment:
-      name: dev
-
     permissions:
       contents: read
       id-token: write
