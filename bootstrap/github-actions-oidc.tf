@@ -255,7 +255,8 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
         Effect = "Allow"
 
         Action = [
-          "autoscaling:DescribeAutoScalingGroups"
+          "autoscaling:DescribeAutoScalingGroups",
+          "autoscaling:DescribePolicies"
         ]
 
         Resource = "*"
