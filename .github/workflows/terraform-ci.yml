@@ -406,40 +406,79 @@ jobs:
           terraform state list | wc -l
 
 
-      # ============================================================
-      # 11. TERRAFORM PLAN
-      # ============================================================
+      # ----------------------------------------
+      # Terraform Plan
+      # ----------------------------------------
+
+      - name: Terraform Init - Dev Backend
+        working-directory: environments/dev
+        run: |
+         set -euo pipefail
+
+         terraform init -input=false
 
       - name: Terraform Plan - Dev
         working-directory: environments/dev
         run: |
-          set -euo pipefail
+         set -euo pipefail
 
-          terraform plan \
-            -input=false \
-            -lock-timeout=5m \
-            -out=tfplan
+         terraform plan \
+         -input=false \
+         -out=tfplan
 
+         terraform show -no-color tfplan > tfplan.txt
 
-      # ============================================================
-      # 12. PLAN SUMMARY
-      # ============================================================
-
-      - name: Show Terraform Plan Summary
+      - name: Terraform Plan Summary
         working-directory: environments/dev
         run: |
-          set -euo pipefail
+         set -euo pipefail
 
-          terraform show -no-color tfplan | tail -50
+         echo "========================================"
+         echo "Terraform Plan Summary"
+         echo "========================================"
 
+         tail -20 tfplan.txt
 
-      # ============================================================
-      # 13. UPLOAD PLAN ARTIFACT
-      # ============================================================
+      - name: Check for destructive or replacement changes
+        working-directory: environments/dev
+        run: |
+         set -euo pipefail
+
+         echo "========================================"
+         echo "Checking Terraform plan safety"
+         echo "========================================"
+
+         DESTRUCTIVE=false
+
+         if grep -q "will be destroyed" tfplan.txt; then
+           echo "WARNING: Resource destruction detected."
+           grep -B5 -A5 "will be destroyed" tfplan.txt || true
+           DESTRUCTIVE=true
+         fi
+
+         if grep -q "must be replaced" tfplan.txt; then
+           echo "WARNING: Resource replacement detected."
+           grep -B5 -A8 "must be replaced" tfplan.txt || true
+           DESTRUCTIVE=true
+         fi
+
+         if [ "$DESTRUCTIVE" = true ]; then
+           echo ""
+           echo "ERROR: Terraform plan contains destructive changes."
+           exit 1
+         fi
+
+         echo "Terraform plan passed safety checks."
+
+      # ----------------------------------------
+      # Upload Plan Artifact
+      # ----------------------------------------
 
       - name: Upload Terraform Plan
         uses: actions/upload-artifact@v4
         with:
-          name: terraform-dev-plan
-          path: environments/dev/tfplan
-          retention-days: 7
+        name: terraform-dev-plan
+        path: |
+         environments/dev/tfplan
+         environments/dev/tfplan.txt
+         retention-days: 7
