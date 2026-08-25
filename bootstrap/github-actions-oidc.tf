@@ -233,6 +233,26 @@ resource "aws_iam_policy" "github_actions_terraform_ci" {
       },
 
       # ----------------------------------------------
+      # Route 53 Discovery
+      #
+      # Required for Terraform data sources and
+      # reading existing DNS records during plan
+      # ----------------------------------------------
+
+      {
+        Sid    = "Route53Discovery"
+        Effect = "Allow"
+
+        Action = [
+          "route53:ListHostedZones",
+          "route53:GetHostedZone",
+          "route53:ListResourceRecordSets"
+        ]
+
+        Resource = "*"
+      },
+
+      # ----------------------------------------------
       # AWS Caller Identity
       # ----------------------------------------------
 
