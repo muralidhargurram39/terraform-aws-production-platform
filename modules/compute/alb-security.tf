@@ -16,7 +16,7 @@ resource "aws_s3_bucket" "alb_logs" {
   bucket = "${var.name}-alb-access-logs"
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 
   tags = merge(
@@ -121,7 +121,7 @@ resource "aws_kms_key" "waf_logs" {
   deletion_window_in_days = 30
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 
   policy = jsonencode({
