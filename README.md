@@ -1,75 +1,74 @@
 # AWS Production Infrastructure Platform
 
-Production-grade AWS infrastructure built using reusable Terraform modules.
+A production-style AWS infrastructure project built using **Terraform**, **AWS**, and **GitHub Actions**.
 
-## Objectives
+This project was created to practice designing, deploying, securing, and managing AWS infrastructure using Infrastructure as Code (IaC).
 
-This project provisions a secure, highly available and disaster-recovery-ready AWS platform supporting:
+> **Current Status:** The DEV environment has been destroyed. This repository is retained as a reference for the infrastructure design, Terraform modules, AWS architecture, and CI/CD implementation.
 
-- Development
-- Staging
-- Production
+---
 
-## Architecture
+# Project Overview
 
-The platform is designed around:
+This project provisions AWS infrastructure using reusable Terraform modules.
 
-- Multi-AZ networking
-- Public, private and isolated subnets
-- NAT Gateway per Availability Zone
-- Application Load Balancer
+The DEV environment included:
+
+- Virtual Private Cloud (VPC)
+- Public, private, and isolated subnets
+- Internet Gateway
+- NAT Gateway
+- Route Tables
+- Security Groups
+- Application Load Balancer (ALB)
 - Auto Scaling Group
-- Least-privilege IAM
-- Route53
-- ACM
-- CloudFront
-- S3
-- Cross-region disaster recovery
+- EC2 instances
+- IAM roles and policies
+- AWS WAF
+- Amazon S3 for ALB access logs
+- Amazon CloudWatch
+- VPC Flow Logs
+- AWS KMS
+- Amazon Route 53
+- AWS Certificate Manager (ACM)
 
-## Primary Region
+The project also includes GitHub Actions workflows for Terraform validation, planning, and infrastructure deployment.
 
-`ap-south-2` — Asia Pacific (Hyderabad)
+---
 
-## Disaster Recovery Region
+# AWS Region
 
-`ap-southeast-1` — Asia Pacific (Singapore)
+The DEV infrastructure was deployed in:
 
-## Technology Stack
+| Environment | Region |
+|---|---|
+| DEV | `ap-south-2` |
+| Region Name | Asia Pacific (Hyderabad) |
 
-- Terraform
-- AWS VPC
-- EC2
-- Application Load Balancer
-- Auto Scaling
-- IAM
-- Route53
-- ACM
-- CloudFront
-- S3
+---
 
-## Repository Structure
+# Architecture Overview
+
+The application architecture followed this general flow:
 
 ```text
-modules/
-    vpc/
-    security/
-    iam/
-    alb/
-    compute/
-    dns/
-    acm/
-    cloudfront/
-    dr/
-
-environments/
-    dev/
-    staging/
-    prod/
-
-global/
-    route53/
-    acm/
-    cloudfront/
-
-bootstrap/
-    Terraform remote-state infrastructure
+                         Internet
+                            |
+                            v
+                         Route 53
+                            |
+                            v
+                    Application Load Balancer
+                         /              \
+                        v                v
+                  EC2 Instance      EC2 Instance
+                        \                /
+                         \              /
+                          v            v
+                         Auto Scaling Group
+                                |
+                                v
+                         Private Subnets
+                                |
+                                v
+                          Application
