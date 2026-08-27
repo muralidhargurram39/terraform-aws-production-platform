@@ -6,7 +6,7 @@ resource "aws_kms_key" "terraform_state" {
   deletion_window_in_days = 30
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 
   tags = {
@@ -42,7 +42,7 @@ resource "aws_s3_bucket" "terraform_state" {
   bucket = "${var.project_name}-terraform-state"
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 }
 
@@ -52,7 +52,7 @@ resource "aws_s3_bucket" "terraform_state_access_logs" {
   bucket = "${var.project_name}-terraform-state-access-logs"
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 
   tags = {

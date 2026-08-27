@@ -21,7 +21,7 @@ resource "aws_kms_key" "route53_dnssec" {
   deletion_window_in_days  = 30
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 
   policy = jsonencode({
@@ -109,7 +109,7 @@ resource "aws_kms_key" "route53_query_logs" {
   deletion_window_in_days = 30
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 
   policy = jsonencode({
